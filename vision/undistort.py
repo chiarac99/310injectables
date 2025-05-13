@@ -68,16 +68,20 @@ def convert_distorted_coordinate_to_pixel_space(u, v):
     return undistorted_pt
 
 
-def undistort_img(filename, display=True):
+def undistort_img(img, filename=False, display=True):
     """
     Display an undistorted image
     Args:
-        filename: str
+        img: ndarray (cv2 rendered image matrix)
+        filename: str (if want to read from file instead)
+        display: bool (true if display of img wanted)
 
     Returns:
         undistorted image matrix
     """
-    img = cv.imread(filename)
+    if filename:
+        # if reading from file, replace img with image from file
+        img = cv.imread(filename)
 
     # load calibration data
     data, mtx, dist, H, newcameramtx = load_calibration_data()
