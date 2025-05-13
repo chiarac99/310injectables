@@ -75,7 +75,6 @@ for fname in images:
 
         # display (if necessary)
         cv.imshow('img', img)
-        cv.imwrite("test_output.jpg", img)
         cv.waitKey(500)  # only display for 500ms
 
 cv.destroyAllWindows()  # close all show windows
