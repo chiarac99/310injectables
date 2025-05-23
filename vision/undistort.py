@@ -15,16 +15,18 @@ import cv2 as cv
 def load_calibration_data():
     """
     Gets all calibration data from file
-    Returns: data, camera matrix, distortion coefficients, homography matrix and newcameramatx
+    Returns: data, camera matrix, distortion coefficients, homography matrix, newcameramatx, bounding_box
     """
 
-    data = np.load('calibration_data.npz')
-    mtx = data['mtx']
-    dist = data['dist']
-    H = data['H']
-    newcameramtx = data['newcameramtx']
+    data = np.load("vision/calibration_data.npz")
+    mtx = data["mtx"]
+    dist = data["dist"]
+    H = data["H"]
+    newcameramtx = data["newcameramtx"]
+    bounding_box = data["bounding_box"]
+    pixel_to_step_ratio = data["pixel_to_step_ratio"]
 
-    return data, mtx, dist, H, newcameramtx
+    return data, mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio
 
 
 def convert_distorted_coordinate_to_real_space(u, v):
@@ -36,14 +38,14 @@ def convert_distorted_coordinate_to_real_space(u, v):
     """
 
     # load calibration data
-    data, mtx, dist, H, newcameramtx = load_calibration_data()
+    data, mtx, dist, H, newcameramtx, pixel_to_step_ratio = load_calibration_data()
 
     src_pt = np.array([[u, v]], dtype=np.float32)
 
     # tranform pixel points to real space using inverse of H matrix transform
     H_inverse = np.linalg.inv(H)
-    dst_pt = cv.perspectiveTransform(src_pt[None,:,:], H_inverse)
-    new_x, new_y = dst_pt[0,0]
+    dst_pt = cv.perspectiveTransform(src_pt[None, :, :], H_inverse)
+    new_x, new_y = dst_pt[0, 0]
     print(f"Point at image ({u:.1f},{v:.1f}) -> ({new_x:.2f}, {new_y:.2f}) mm")
 
     return (new_x, new_y)
@@ -60,10 +62,12 @@ def convert_distorted_coordinate_to_pixel_space(u, v):
     """
 
     # load calibration data
-    data, mtx, dist, H, newcameramtx = load_calibration_data()
+    data, mtx, dist, H, newcameramtx, pixel_to_step_ratio = load_calibration_data()
 
     # undistort point
-    undistorted_pt = cv.undistortPoints(np.array([[[u,v]]], dtype=np.float32), mtx, dist, P=newcameramtx)
+    undistorted_pt = cv.undistortPoints(
+        np.array([[[u, v]]], dtype=np.float32), mtx, dist, P=newcameramtx
+    )
 
     return undistorted_pt
 
@@ -84,7 +88,9 @@ def undistort_img(img, filename=False, display=True):
         img = cv.imread(filename)
 
     # load calibration data
-    data, mtx, dist, H, newcameramtx = load_calibration_data()
+    data, mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio = (
+        load_calibration_data()
+    )
 
     # undistort img
     undistorted_img = cv.undistort(img, mtx, dist, None, newcameramtx)
@@ -92,5 +98,10 @@ def undistort_img(img, filename=False, display=True):
     if display:
         # display undistorted img
         cv.imshow("Undistorted image", undistorted_img)
+        cv.waitKey(0)  # Wait for key press
+        cv.destroyAllWindows()  # Close image window
 
     return undistorted_img
+
+
+# undistort_img(None, "test/syringe_test2.jpg")
