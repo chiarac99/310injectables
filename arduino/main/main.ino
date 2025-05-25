@@ -37,21 +37,46 @@ uint8_t cutActivated = 1;
 int alignStepCount = 0; // step count record
 int cutStepCount = 0;
 
-// TODO: temp stuff
-bool lastSwitchState = HIGH;
-const int switchPin = 2;  // Limit switch
+// REPOSITION PADDLE
+// variables received from python for repositioning
+#define LIMIT_SWITCH_PADDLE 13
+#define DIR_PIN_PADDLE 6
+#define STEP_PIN_PADDLE 7
+#define HOMING_INTERVAL_PADDLE 2500 // microseconds/step
+#define FAST_INTERVAL_PADDLE 1250 // microseconds/step
+char syringeDir;  // dir of syringe (determines where to send paddle before repositioning)
+int syringeCut;  // position in pixels of where to cut
+int paddlePos = 0;  // saves current position of paddle
+unsigned long lastStepTimePaddle = 0;
+unsigned long pulseStartPaddle = 0;
+bool pulseHighPaddle = false;
+int currentStepPaddle = 0;
 
+#define PADDLE_TO_HOME 0
+#define PADDLE_AWAY_FROM_HOME 1
+#define PADDLE_OFF 2
+int directionPaddle = PADDLE_OFF; //PADDLE_TO_HOME;  // start in limitswitch dir
+int lastDirectionPaddle = PADDLE_OFF;
+int intervalPaddle = HOMING_INTERVAL_PADDLE;
+int targetPaddlePos = 0;
+uint8_t paddleTargetReached = 1; // bool for state machine to know when a target has been reached
+
+#define PADDLE_HOME_POS 0
+#define PADDLE_AWAY_FROM_HOME_POS 500 // 5 x 200 steps (1 x rev)
 
 // states
 typedef enum {
   INITIALISING_CAMERA,
   INITIALISING_BLADE,
+  HOMING_PADDLE,
   MOVING_UP, // no need to home actuators because we will always be moving upwards first; we check if we reach the limit switch at the top of EVERY cycle
   MOVING_DOWN,
   ASK_FOR_IMG,
   WAITING_FOR_IMG_OUTPUT,
+  PRE_POSITION_PADDLE,
+  TESTING_REPOSITIONING
 } systemState_t;
-systemState_t systemState = MOVING_UP;
+systemState_t systemState = ASK_FOR_IMG;
 
 void setup() {
   Serial.begin(115200);
@@ -70,11 +95,17 @@ void setup() {
   pinMode(LIMIT_SWITCH_ALIGN, INPUT_PULLUP);
   pinMode(LIMIT_SWITCH_CUT, INPUT_PULLUP);
 
+  // paddle
+  pinMode(DIR_PIN_PADDLE, OUTPUT);
+  pinMode(STEP_PIN_PADDLE, OUTPUT);
+  digitalWrite(DIR_PIN_PADDLE, PADDLE_TO_HOME);
+
   delay(2000);
 
 }
 
 void loop() {
+
 
   // update state
   stateHandler();
@@ -82,13 +113,16 @@ void loop() {
   // move step/cut actuators if appropriate
   moveActuators();
 
-  // if (checkLimitSwitch(LIMIT_SWITCH_1)){
-  //   Serial.println("limit switch pressed!");
-  // }
-
+  // move paddle if appropriate
+  updatePaddleDir();
+  movePaddle();
 }
 
 void stateHandler(){
+  // Serial.print("target pos: "); Serial.println(targetPaddlePos);
+
+  // Serial.print("real pos: "); Serial.println(paddlePos);
+
   // state machine
   switch (systemState) {
 
@@ -99,6 +133,17 @@ void stateHandler(){
 
       case INITIALISING_BLADE:
         // turn on motor for rotary saw
+        break;
+
+      case HOMING_PADDLE:
+        // move paddle to limit switch
+        // if paddle limitswitch activated, move to next step + reset paddlePos = 0
+        if (paddleHomed()){
+          paddlePos = PADDLE_HOME_POS; // set paddle position to home
+          Serial.println("paddled home!");
+          // while(1);
+        }
+
         break;
 
       case MOVING_UP:
@@ -130,14 +175,41 @@ void stateHandler(){
 
       case WAITING_FOR_IMG_OUTPUT:
         if (receivedImgOutput()) {
-          Serial.println("received output!");
 
+          // check input
+          if (syringeDir == 'R' || syringeDir == 'L'){
           // activate steppers
-          alignActivated = 1;
-          cutActivated = 1;
+          // alignActivated = 1;
+          // cutActivated = 1;
+
+            // change state
+            setPaddlePreposition();
+            intervalPaddle = FAST_INTERVAL_PADDLE; // also increase speed
+            systemState = PRE_POSITION_PADDLE;
+
+          } else {
+            // go back to SNAP
+            systemState = ASK_FOR_IMG;
+          }
+        }
+        break;
+
+      case PRE_POSITION_PADDLE:
+        if (paddleTargetReached){
 
           // change state
-          systemState = MOVING_DOWN;
+          setPaddlePlungerPos();
+          systemState = TESTING_REPOSITIONING;
+
+        }
+        break;
+
+      case TESTING_REPOSITIONING:
+        if (paddleTargetReached){
+          
+          // change state
+          systemState = ASK_FOR_IMG;
+
         }
         break;
 
@@ -153,7 +225,20 @@ void stateHandler(){
 }
 
 
-/* state functions*/
+/* STATE FUNCTIONS */
+
+uint8_t paddleHomed(){
+  // // return true if the paddle limitswitch is activated
+  uint8_t homed = limitswitchActivated(LIMIT_SWITCH_PADDLE);
+  
+  if (homed){
+    return 1;
+  }
+
+  return 0;
+
+}
+
 uint8_t movedUp(){
   // return true if both limitswitches have been activated
 
@@ -221,20 +306,146 @@ void moveActuators(void){
       delayMicroseconds(ActuatorStepDelay);
     }
   }
+  // if neither are activated, do nothing
 
-  // // update step
-  // // depends on globals alignActivated, cutActivated
-  // if(alignActivated) digitalWrite(STEP_PIN_ALIGN, HIGH);
-  // if(cutActivated) digitalWrite(STEP_PIN_CUT, HIGH);
+}
 
-  // if(alignActivated || cutActivated){
-  //   delayMicroseconds(ActuatorStepDelay);
-  //   digitalWrite(STEP_PIN_ALIGN, LOW);
-  //   digitalWrite(STEP_PIN_CUT, LOW);
-  //   delayMicroseconds(ActuatorStepDelay);  // Delay between steps (increase for slower speed)
+
+void setPaddlePreposition(void){
+  // sets target position of paddle with known syringe dir
+  if (syringeDir == 'R'){
+    // move paddle to home
+    directionPaddle = PADDLE_TO_HOME;
+    targetPaddlePos = PADDLE_HOME_POS;
+  }
+  else if (syringeDir == 'L'){
+    // move paddle to opposite side
+    directionPaddle = PADDLE_AWAY_FROM_HOME;
+    targetPaddlePos = PADDLE_AWAY_FROM_HOME_POS;
+  }
+  else {
+    Serial.println("ERROR: not a syringe dir");
+  }
+
+  // set the target flag false
+  paddleTargetReached = 0;
+}
+
+
+void setPaddlePlungerPos(void){
+  // if (syringeDir == 'R'){
+
+  // } else if (syringeDir == 'L'){
+
+  // } else {
+  //   Serial.println("ERROR: not a syringe dir");
   // }
 
-  // if neither are activated, do nothing
+  // map pixel space to paddle motor space (i.e. number of steps to send)
+  // 
+
+  // set dir
+  if (syringeDir == 'R'){
+    // move paddle away from home
+    directionPaddle = PADDLE_AWAY_FROM_HOME;
+  }
+  else if (syringeDir == 'L'){
+    // move paddle towards home
+    directionPaddle = PADDLE_TO_HOME;
+  }
+  else {
+    Serial.println("ERROR: not a syringe dir");
+  }
+
+  // python should send a value that has already been mapped to our paddle space
+  // since the paddle space is not changing
+  // python accounts for slight changes in camera positioning
+  // and always sends a value equivalent to the number of steps needed to travel by the paddle stepper
+  // this is a value from 0 (HOME) to MAX
+  targetPaddlePos = syringeCut;
+
+  // set the target flag false
+  paddleTargetReached = 0;
+
+}
+
+
+uint8_t movedPaddleToTarget(){
+  // check if moved to target position
+  // // steps are impossible to miss
+  // if (paddlePos == targetPaddlePos) return 1;
+  
+  if (directionPaddle == PADDLE_TO_HOME){
+    // if moving towards home, paddlePos will have to be less than target position to pass target
+    if (paddlePos <= targetPaddlePos) {
+      paddleTargetReached = 1;
+      return 1;
+    }
+  } else if (directionPaddle == PADDLE_AWAY_FROM_HOME) {
+    // paddle is moving away from home, so paddlePos will have to be larger than target to pass target
+    if (paddlePos >= targetPaddlePos){
+      paddleTargetReached = 1;
+      return 1;
+    }
+  } else if (directionPaddle == PADDLE_OFF){
+    // don't change the paddleTargetReached flag
+    // but still still return true
+    // this addresses both the case that paddle if OFF, but a target has just been set
+    // or that paddle is off and no target exists
+    return 1;
+  } else {
+    Serial.println("ERROR: Not a valid paddle dir");
+  }
+
+
+  return 0;
+}
+
+void updatePaddleDir(void){
+  
+  if ((directionPaddle != PADDLE_OFF) && (directionPaddle != lastDirectionPaddle)) {
+    digitalWrite(DIR_PIN_PADDLE, directionPaddle);
+    lastDirectionPaddle = directionPaddle;
+  }
+}
+
+void movePaddle(void){
+  if (directionPaddle == PADDLE_OFF) {
+    return; // Paddle is inactive
+  }
+
+  // 🚫 Don't move if already at target
+  if (movedPaddleToTarget()) {
+    directionPaddle = PADDLE_OFF;
+    return;
+  }
+  
+  // update step
+  unsigned long now = micros();
+  if (!pulseHighPaddle && (now - lastStepTimePaddle >= intervalPaddle)) {
+    // next step to be sent according to time interval wanted (i.e. set speed)
+    // pull step pin HIGH
+    digitalWrite(STEP_PIN_PADDLE, HIGH);
+    pulseStartPaddle = now;
+    pulseHighPaddle = true;
+    lastStepTimePaddle = now;
+
+    // update paddle pos
+    if (directionPaddle == PADDLE_TO_HOME){
+      // this is the homing dir
+      // so should go down to 0 (which is home)
+      paddlePos--;
+    } else {
+      // going away from home
+      // increase pos
+      paddlePos++;
+    }
+  } else if (pulseHighPaddle && (now - pulseStartPaddle >= 10)) {
+    // pull step pin LOW to send falling edge
+    digitalWrite(STEP_PIN_PADDLE, LOW);
+    pulseHighPaddle = false;
+  }
+
 
 }
 
@@ -249,19 +460,68 @@ uint8_t limitswitchActivated(uint8_t pin){
 
 
 uint8_t receivedImgOutput(void) {
-  static String buf = "";
+  // output from python is going to be in the form:
+  // <d[char]c[int]>
+  // where d is direction the syringe is pointing: 'L' or 'R'
+  // and c is where to cut in pixels (int)
 
-  while (Serial.available()) {
+  String buf = "";
+  static uint8_t data_packet_started = 0;
+  static uint8_t done = 0;
+
+  while (Serial.available() && !done) {
     char inChar = (char)Serial.read();
-    if (inChar == '\n') {
-      if (buf.indexOf("OUTPUT") >= 0) {
-        buf = "";
-        return 1;
+
+    if (data_packet_started) {
+        // add to buffer
+        // include end char
+        buf += inChar;
+      if (inChar == '>') {
+        // received end char
+        // stop reading serial
+        done = 1;
+        Serial.println(buf);
       }
-      buf = ""; // Reset even if message was invalid
     } else {
-      buf += inChar;
+      if (inChar == '<') {
+        // received start char
+        // start reading serial
+        data_packet_started = 1;
+      }
     }
   }
+
+  if (done) {
+    // Try parsing manually without exceptions
+    int dIdx = buf.indexOf("d");
+    int cIdx = buf.indexOf("c");
+
+    if (dIdx != -1 && cIdx != -1) {
+      syringeDir = buf.charAt(dIdx + 1);
+      
+      int startC = cIdx + 1;
+      int endC = buf.indexOf('>');
+      if (endC != -1) {
+        String cStr = buf.substring(startC, endC);
+        syringeCut = cStr.toInt();
+        
+        Serial.print("dir: ");
+        Serial.println(syringeDir);
+        Serial.print("cut: ");
+        Serial.println(syringeCut);
+      } else {
+        Serial.println("Error: could not find closing bracket for c");
+      }
+    } else {
+      Serial.println("Error: d or c not found");
+    }
+
+    buf = "";
+    done = 0;
+    data_packet_started = 0;
+
+    return 1;
+  }
+
   return 0;
 }
