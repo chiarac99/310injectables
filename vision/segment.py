@@ -1,76 +1,86 @@
 """
-segment.py
+Segment.py: Image Segmentation and Plunger Detection Module
 
-Methods for segmentation of  a given image and determining position of the black plunger.
+This module provides functionality for:
+1. Segmenting syringe images using SAM (Segment Anything Model)
+2. Detecting the position of the black plunger
+3. Calculating cutting positions based on syringe orientation
 
+Author: The Injectables | ME310
 """
 
 import torch
 import numpy as np
 import cv2
-from numpy.ma.core import where
-from segment_anything import sam_model_registry, SamPredictor
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
+from segment_anything import sam_model_registry, SamPredictor
 import undistort
 
 # from vision.undistort import undistort_img
+# Constants
+SAM_CHECKPOINT = "/Users/venkatasaisarangrandhe/sam_weights/sam_vit_b_01ec64.pth"
+MODEL_TYPE = "vit_b"
+
+# Hardware Constants (in inches)
+BLADE_POS_LEFT = 3.8
+BLADE_POS_RIGHT = 6.6
+STEPS_TO_LENGTH_RATIO = 101.45  # 200 steps/rev, 0.6275" diameter pulley
+MAX_PADDLE_POS = 10.4
 
 
 def segment(img):
     """
+    Segment the syringe in the input image using SAM model.
 
     Args:
         img:
 
     Returns:
-
+        tuple: (
+            image_rgb (np.ndarray): RGB version of input image,
+            orientation (str): Syringe orientation ('L' or 'R'),
+            mask (np.ndarray): Binary segmentation mask,
+            syringe_start_col (int): Starting column of syringe
+        )
     """
-
-    sam_checkpoint = "/Users/venkatasaisarangrandhe/sam_weights/sam_vit_b_01ec64.pth"  # Modify this path to the path of the sam_vit_b_01ec64.pth file
-
-    model_type = "vit_b"
-
+    # Initialize SAM model
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-
-    sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
+    sam = sam_model_registry[MODEL_TYPE](checkpoint=SAM_CHECKPOINT)
     sam.to(device=device)
-
     predictor = SamPredictor(sam)
 
-    # get bounding box
+    # Apply bounding box from calibration
     _, _, _, _, _, bounding_box, _ = undistort.load_calibration_data()
-    (x1, y1, x2, y2) = bounding_box
-    img = img[y1:y2, x1:x2]
-    # cv2.imshow("image_rgb", image_rgb)
-    # cv2.waitKey(0)  # press 0 to close
-    # cv2.destroyAllWindows()
 
-    # recolour the iamge
+    # Convert bounding box coordinates to integers and ensure they're within image bounds
+    h, w = img.shape[:2]
+    x1, y1, x2, y2 = [int(coord) for coord in bounding_box]
+    x1 = max(0, min(x1, w - 1))
+    y1 = max(0, min(y1, h - 1))
+    x2 = max(0, min(x2, w))
+    y2 = max(0, min(y2, h))
+
+    # Crop image using validated coordinates
+    img = img[y1:y2, x1:x2]
+
+    # Convert to RGB for processing
     image_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    # put it through the predictive segmentation model
+    # Generate prediction mask
     predictor.set_image(image_rgb)
     x, y, z = np.shape(image_rgb)
-    input_box = np.array([0, 0, y, x])  # Just the shape of the image
-    input_label = np.array([0])
+    input_box = np.array([0, 0, y, x])
+    masks, _, _ = predictor.predict(box=input_box[None, :], multimask_output=False)
 
-    masks, scores, logits = predictor.predict(
-        box=input_box[None, :], multimask_output=False
-    )
-
-    mask = masks[0]  # single mask from box
-    mask = (
-        ~mask
-    )  # Sometimes, segmentation takes the background as foreground. I am still looking to correct it automatically
+    # Clean up the mask
+    mask = ~masks[0]  # Invert mask as sometimes background is detected as foreground
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
     cleaned_mask = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_OPEN, kernel)
-    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(cleaned_mask)
 
-    # Get the largest component (excluding background: label 0) This deletes any noise in the mask
+    # Extract largest component to remove noise
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(cleaned_mask)
     largest_label = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
-    main_component_mask = (labels == largest_label).astype(np.uint8)
-    mask = main_component_mask
+    mask = (labels == largest_label).astype(np.uint8)
 
     # x_indices = np.any(main_component_mask, axis=0)
     # x_start = np.argmax(x_indices)
@@ -80,55 +90,51 @@ def segment(img):
 
     # The above commented code is used to get the length of the syringe. Use this to get the x_start and x_end of the syringe. But in my opinion, since the mask is cleaned, (Chiara) your code of using np.argmax and min should work now
 
-    plt.figure()
-    plt.imshow(image_rgb)
-    plt.imshow(mask, alpha=0.5)
-    plt.title("Step 5: Predicted Mask from SAM with cleaned mask")
-    plt.axis("off")
-    plt.show()
+    # plt.figure()
+    # plt.imshow(image_rgb)
+    # plt.imshow(mask, alpha=0.5)
+    # plt.title("Segmentation Result")
+    # plt.axis("off")
+    # plt.show()
 
+    # Analyze mask properties
     column_sums = np.sum(mask, axis=0)
     max_width_col = np.argmax(column_sums)
     max_width_value = column_sums[max_width_col]
 
-    print("Max width column:", max_width_col)
-    print("Max width value (pixels):", max_width_value)
-
-    # plt.imshow(mask, cmap='gray')
-    # plt.axvline(max_width_col, color='red', linestyle='--')
-    # plt.title(f"Max Width Col: {max_width_col}")
-    # plt.show()
-
-    x_foreground = np.any(mask, axis=0)  # Boolean array: columns with any mask
-    x_coords = np.where(x_foreground)[0]  # Column indices with mask
-    x_center = int(np.mean(x_coords))  # Mean column index
+    # Determine syringe orientation
+    x_foreground = np.any(mask, axis=0)
+    x_coords = np.where(x_foreground)[0]
+    x_center = int(np.mean(x_coords))
 
     if max_width_col < x_center:
-        orientation = "L"  # Needle is pointing RIGHT"
-        # syringe is pointing RIGHT → plunger side is on the LEFT (min x)
+        orientation = "L"  # Needle pointing RIGHT
         syringe_start_col = np.min(x_coords)
     else:
-        orientation = "R"  # "Needle is pointing LEFT"
-        # syringe is pointing LEFT → plunger side is on the RIGHT (max x)
+        orientation = "R"  # Needle pointing LEFT
         syringe_start_col = np.max(x_coords)
-
-    print("🟢", orientation)
 
     return image_rgb, orientation, mask, syringe_start_col
 
 
 def detect_plunger(img, mask):
     """
+    Detect the position of the black plunger in the segmented syringe image.
 
     Args:
-        img:
+        img (np.ndarray): RGB image
+        mask (np.ndarray): Binary segmentation mask
 
     Returns:
-
+        tuple: (
+            rubber_mask (np.ndarray): Binary mask of detected plunger,
+            start_col (int): Starting column of plunger window,
+            end_col (int): Ending column of plunger window
+        )
     """
-
-    # Convert to grayscale
+    # Convert to grayscale and isolate syringe region
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    syringe_region = np.where(mask, gray, 255)
 
     # Apply mask to grayscale image
     syringe_region = np.where(mask, gray, 255)  # Set non-syringe to white (255)
@@ -157,176 +163,133 @@ def detect_plunger(img, mask):
     )
 
     kernel = np.ones((3, 3), np.uint8)
-    eroded = cv2.erode(syringe_enhanced, kernel, iterations=1)
-
-    # Step 2: Apply Gaussian Blur to reduce noise
+    eroded = cv2.erode(syringe_region, kernel, iterations=1)
     blurred = cv2.GaussianBlur(eroded, (3, 3), 0)
 
-    # Step 3: Erosion to remove small bright noise
-
-    # Step 4: Threshold to find darkest regions
+    # Threshold to find dark regions (plunger)
     _, rubber_mask = cv2.threshold(blurred, 50, 255, cv2.THRESH_BINARY_INV)
-
-    # Step 5: Morphological cleanup (remove small holes)
     rubber_mask = cv2.morphologyEx(rubber_mask, cv2.MORPH_OPEN, kernel)
 
-    # # Step 6: Show the result
-    # plt.imshow(rubber_mask, cmap='gray')
-    # plt.title("Rubber Detection with Blurring + Erosion + Threshold + Morphology")
-    # plt.axis('off')
-    # plt.show()
-
-    # Image size
+    # Find optimal plunger window using sliding window
     height, width = rubber_mask.shape
-
-    # Sliding window config
     window_size = 20
     start_limit = int(0.25 * width)
     end_limit = int(0.75 * width)
 
-    # Tracking best window
     max_ratio = -1
     best_start = -1
 
     for col in range(start_limit, end_limit - window_size + 1):
-        # Define the current window slice
         mask_window = mask[:, col : col + window_size]
         image_window = rubber_mask[:, col : col + window_size]
-
-        # Extract only pixels within the mask
         valid_pixels = image_window[mask_window]
 
         if valid_pixels.size == 0:
-            continue  # skip if no mask present
+            continue
 
-        ratio = np.mean(valid_pixels)  # or sum(valid_pixels)/count — same here
+        ratio = np.mean(valid_pixels)
         if ratio > max_ratio:
             max_ratio = ratio
             best_start = col
 
-    # Result
     start_col = best_start
     end_col = best_start + window_size
-
-    # print(f"Best region inside mask: {start_col}–{end_col}, avg intensity = {max_ratio:.2f}")
-
-    # Visualization
-    # plt.imshow(gray, cmap='gray')
-    # plt.axvline(start_col, color='lime', linestyle='--', label='Window Start')
-    # plt.axvline(end_col, color='orange', linestyle='--', label='Window End')
-    # plt.title(f"Max Proportional Brightness in Mask | {start_col}-{end_col}")
-    # plt.legend()
-    # plt.axis('off')
-    # plt.show()
-
-    # # Image size
-    # height, width = rubber_mask.shape
-    #
-    # # Sliding window config
-    # window_size = 20
-    # start_limit = int(0.25 * width)
-    # end_limit = int(0.75 * width)
-    #
-    # # Tracking best window
-    # max_ratio = -1
-    # best_start = -1
-    #
-    # for col in range(start_limit, end_limit - window_size + 1):
-    #     # Define the current window slice
-    #     mask_window = mask[:, col:col + window_size]
-    #     image_window = rubber_mask[:, col:col + window_size]
-    #
-    #     # Extract only pixels within the mask
-    #     valid_pixels = image_window[mask_window]
-    #
-    #     if valid_pixels.size == 0:
-    #         continue  # skip if no mask present
-    #
-    #     ratio = np.mean(valid_pixels)  # or sum(valid_pixels)/count — same here
-    #     if ratio > max_ratio:
-    #         max_ratio = ratio
-    #         best_start = col
-    #
-    # # Result
-    # start_col = best_start
-    # end_col = best_start + window_size
-    #
-    # print(f"Best region inside mask: {start_col}–{end_col}, avg intensity = {max_ratio:.2f}")
-    #
-    # # Visualization
-    # plt.imshow(rubber_mask, cmap='gray')
-    # plt.axvline(start_col, color='lime', linestyle='--', label='Window Start')
-    # plt.axvline(end_col, color='orange', linestyle='--', label='Window End')
-    # plt.title(f"Max Proportional Brightness in Mask | {start_col}-{end_col}")
-    # plt.legend()
-    # plt.axis('off')
-    # plt.show()
 
     return rubber_mask, start_col, end_col
 
 
 def get_cut(flange_position, plunger_start, plunger_end, orientation, error):
     """
-    Returns number of steps the paddle needs to move from either 'home' or 'max' for arduino;
-    Takes into account some error for plunger detection IN PIXELS
+    Calculate the number of steps needed to move the paddle for cutting.
+
     Args:
-        flange_position: int
-        plunger_start: int
-        plunger_end: int
-        orientation: str
-        error: int (how many pixels to move to be sure that we've cleared the plunger)
+        flange_position (float): Current flange position
+        plunger_start (int): Starting position of plunger window
+        plunger_end (int): Ending position of plunger window
+        orientation (str): Syringe orientation ('L' or 'R')
+        error (int): Error margin in pixels
 
-    Returns: int
-
+    Returns:
+        int: Number of steps to move the paddle
     """
-    # these values are all in " in real space
-    whereToCut = 0
-    whereToMove = 0
-    bladePosL = 3.8  # inches
-    bladePosR = 6.6  # inches
-    # length to steps conversion
-    steps_to_length_ratio = (
-        101.45  # in steps/inch: 200 steps/rev, 0.6275" diameter pulley
-    )
-    maxPaddlePos = 10.4  # inches
-
-    # get ratio of pixels to length
+    # Load calibration data
     _, _, _, _, _, _, pixels_to_length_ratio = undistort.load_calibration_data()
 
     if orientation == "L":
-        # syringe is pointed left
-        # so use right side of plunger window ('end') and add error
-        whereToCut = (plunger_end + error) / pixels_to_length_ratio
-        if whereToCut > bladePosL:
-            # syringe doesn't need to be moved
-            whereToMove = 0
+        # Syringe pointed left - use right side of plunger window
+        where_to_cut = (plunger_end + error) / pixels_to_length_ratio
+        if where_to_cut > BLADE_POS_LEFT:
+            where_to_move = 0
         else:
-            whereToMove = bladePosL - whereToCut + flange_position
+            where_to_move = BLADE_POS_LEFT - where_to_cut + flange_position
 
     elif orientation == "R":
-        # syringe is pointed right
-        # so use left side of plunger window ('start') and subtract error
-        whereToCut = plunger_start - error
-        if whereToCut > bladePosR:
-            whereToMove = 0
+        # Syringe pointed right - use left side of plunger window
+        where_to_cut = plunger_start - error
+        if where_to_cut > BLADE_POS_RIGHT:
+            where_to_move = 0
         else:
-            whereToMove = maxPaddlePos - flange_position - whereToCut + bladePosR
+            where_to_move = (
+                MAX_PADDLE_POS - flange_position - where_to_cut + BLADE_POS_RIGHT
+            )
 
     else:
-        print("Invalid syringe orientation")
+        raise ValueError("Invalid syringe orientation")
 
-    return int(whereToMove * steps_to_length_ratio)
+    return int(where_to_move * STEPS_TO_LENGTH_RATIO)
 
 
-# image = cv2.imread("test/syringe_new.jpg")
-#
-# # Find bounding box here
-# # Uncomment this code and draw a bounding box
-# # this will give you x, y, width and height coordinates of the important step
-# # r = cv2.selectROI("Select Bounding Box", image, fromCenter=False, showCrosshair=True)
-# # print("Bounding box:", r)  # (x, y, width, height)
-# # cv2.destroyAllWindows()
-#
-# image_rgb, orientation, mask = segment(image)
-#
-# detect_plunger(image_rgb, mask)
+# Example usage
+
+# Open camera
+camera = cv2.VideoCapture(0)
+
+# Warm up camera
+for _ in range(5):
+    ret, frame = camera.read()
+
+if ret:
+    # Process the captured frame
+    image_rgb, orientation, mask, syringe_start_col = segment(frame)
+    rubber_mask, start_col, end_col = detect_plunger(image_rgb, mask)
+
+    # Visualize final results
+    plt.figure(figsize=(15, 5))
+
+    # Original with mask overlay
+    plt.subplot(131)
+    plt.imshow(image_rgb)
+    plt.imshow(mask, alpha=0.3)
+    plt.axvline(
+        syringe_start_col, color="yellow", linestyle="--", label="Syringe Start"
+    )
+    plt.title(f"Segmentation Result\nOrientation: {orientation}")
+    plt.axis("off")
+    plt.legend()
+
+    # Plunger detection
+    plt.subplot(132)
+    plt.imshow(rubber_mask, cmap="gray")
+    plt.axvline(start_col, color="lime", linestyle="--", label="Plunger Start")
+    plt.axvline(end_col, color="orange", linestyle="--", label="Plunger End")
+    plt.title("Plunger Detection")
+    plt.legend()
+    plt.axis("off")
+
+    # Combined view
+    plt.subplot(133)
+    plt.imshow(image_rgb)
+    plt.imshow(rubber_mask, alpha=0.5, cmap="Reds")
+    plt.title("Combined View")
+    plt.axis("off")
+
+    plt.tight_layout()
+    plt.show()
+
+    # Save the captured frame if needed
+    # cv2.imwrite("captured_frame.jpg", frame)
+
+    # Clean up
+    camera.release()
+else:
+    print("Failed to capture image from camera")

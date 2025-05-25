@@ -134,7 +134,7 @@ def calibrate():
 
     # save calibration data to file
     np.savez(
-        "calibration_data.npz",
+        "vision/calibration_data.npz",
         mtx=mtx,
         dist=dist,
         H=H,
@@ -268,16 +268,18 @@ def redo_bounding_box():
     r = cv.selectROI(
         "Select Bounding Box", undistorted_frame, fromCenter=False, showCrosshair=True
     )
-    print("Bounding box:", r)  # (x, y, width, height)
+    print("\nSelected ROI (x, y, width, height):", r)  # (x, y, width, height)
     cv.destroyAllWindows()
 
     # update bounding box
-    mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio = (
+    mtx, dist, H, newcameramtx, old_bounding_box, pixel_to_step_ratio = (
         load_calibration_data()
     )
+    print("Old bounding box:", old_bounding_box)
 
     # find bounding box (x1, y1, x2, y2) for segment.py
-    new_bounding_box = (r[0], r[1], r[2] + r[0], r[3] + r[1])
+    new_bounding_box = (r[0], r[1], r[0] + r[2], r[1] + r[3])
+    print("New bounding box:", new_bounding_box)
 
     # save updated data back
     np.savez(
@@ -289,6 +291,11 @@ def redo_bounding_box():
         bounding_box=new_bounding_box,
         pixel_to_step_ratio=pixel_to_step_ratio,
     )
+
+    # Verify the save
+    data = np.load("calibration_data.npz")
+    print("Verified saved bounding box:", data["bounding_box"])
+    print("\nBounding box updated successfully!")
 
 
 def find_pixel_to_length_ratio():
