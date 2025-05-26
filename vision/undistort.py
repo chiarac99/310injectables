@@ -18,7 +18,7 @@ def load_calibration_data():
     Returns: data, camera matrix, distortion coefficients, homography matrix, newcameramatx, bounding_box
     """
 
-    data = np.load("vision/calibration_data.npz")
+    data = np.load("calibration_data.npz")
     mtx = data["mtx"]
     dist = data["dist"]
     H = data["H"]

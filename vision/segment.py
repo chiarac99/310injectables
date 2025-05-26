@@ -18,13 +18,16 @@ import undistort
 
 # from vision.undistort import undistort_img
 # Constants
-SAM_CHECKPOINT = "/Users/venkatasaisarangrandhe/sam_weights/sam_vit_b_01ec64.pth"
+# SAM_CHECKPOINT = "sam_vit_b_01ec64.pth"
+SAM_CHECKPOINT = (
+    "/Users/venkatasaisarangrandhe/Documents/ME310C/Testing/sam_vit_b_01ec64.pth"
+)
 MODEL_TYPE = "vit_b"
 
 # Hardware Constants (in inches)
-BLADE_POS_LEFT = 3.8
-BLADE_POS_RIGHT = 6.6
-STEPS_TO_LENGTH_RATIO = 101.45  # 200 steps/rev, 0.6275" diameter pulley
+BLADE_POS_LEFT = 3.4  # 3.625
+BLADE_POS_RIGHT = 7.85  # 7.625
+STEPS_TO_LENGTH_RATIO = 1355 / 10  # 135.5  # 200 steps/rev, 0.47" diameter pulley
 MAX_PADDLE_POS = 10.4
 
 
@@ -165,7 +168,10 @@ def detect_plunger(img, mask):
     kernel = np.ones((3, 3), np.uint8)
     eroded = cv2.erode(syringe_region, kernel, iterations=1)
     blurred = cv2.GaussianBlur(eroded, (3, 3), 0)
-
+    # plt.imshow(blurred, cmap='gray')
+    # plt.title("Syringe Region Only (Grayscale)")
+    # plt.axis('off')
+    # plt.show()
     # Threshold to find dark regions (plunger)
     _, rubber_mask = cv2.threshold(blurred, 50, 255, cv2.THRESH_BINARY_INV)
     rubber_mask = cv2.morphologyEx(rubber_mask, cv2.MORPH_OPEN, kernel)
@@ -218,79 +224,82 @@ def get_cut(flange_position, plunger_start, plunger_end, orientation, error):
     if orientation == "L":
         # Syringe pointed left - use right side of plunger window
         where_to_cut = (plunger_end + error) / pixels_to_length_ratio
-        if where_to_cut > BLADE_POS_LEFT:
+        if where_to_cut < BLADE_POS_LEFT:
             where_to_move = 0
         else:
-            where_to_move = BLADE_POS_LEFT - where_to_cut + flange_position
+            where_to_move = (
+                BLADE_POS_LEFT - where_to_cut + flange_position / pixels_to_length_ratio
+            )
 
     elif orientation == "R":
         # Syringe pointed right - use left side of plunger window
-        where_to_cut = plunger_start - error
+        where_to_cut = (plunger_end - error) / pixels_to_length_ratio
         if where_to_cut > BLADE_POS_RIGHT:
             where_to_move = 0
         else:
             where_to_move = (
-                MAX_PADDLE_POS - flange_position - where_to_cut + BLADE_POS_RIGHT
+                flange_position / pixels_to_length_ratio
+                - where_to_cut
+                + BLADE_POS_RIGHT
             )
 
     else:
         raise ValueError("Invalid syringe orientation")
 
-    return int(where_to_move * STEPS_TO_LENGTH_RATIO)
+    return int(where_to_move * STEPS_TO_LENGTH_RATIO), where_to_move, where_to_cut
 
 
 # Example usage
-"""
-# Open camera
-camera = cv2.VideoCapture(0)
 
-# Warm up camera
-for _ in range(5):
-    ret, frame = camera.read()
-
-if ret:
-    # Process the captured frame
-    image_rgb, orientation, mask, syringe_start_col = segment(frame)
-    rubber_mask, start_col, end_col = detect_plunger(image_rgb, mask)
-
-    # Visualize final results
-    plt.figure(figsize=(15, 5))
-
-    # Original with mask overlay
-    plt.subplot(131)
-    plt.imshow(image_rgb)
-    plt.imshow(mask, alpha=0.3)
-    plt.axvline(
-        syringe_start_col, color="yellow", linestyle="--", label="Syringe Start"
-    )
-    plt.title(f"Segmentation Result\nOrientation: {orientation}")
-    plt.axis("off")
-    plt.legend()
-
-    # Plunger detection
-    plt.subplot(132)
-    plt.imshow(rubber_mask, cmap="gray")
-    plt.axvline(start_col, color="lime", linestyle="--", label="Plunger Start")
-    plt.axvline(end_col, color="orange", linestyle="--", label="Plunger End")
-    plt.title("Plunger Detection")
-    plt.legend()
-    plt.axis("off")
-
-    # Combined view
-    plt.subplot(133)
-    plt.imshow(image_rgb)
-    plt.imshow(rubber_mask, alpha=0.5, cmap="Reds")
-    plt.title("Combined View")
-    plt.axis("off")
-
-    plt.tight_layout()
-    plt.show()
-
-    # Save the captured frame if needed
-    # cv2.imwrite("captured_frame.jpg", frame)
-
-    # Clean up
-    camera.release()
-else:
-    print("Failed to capture image from camera")
-"""
+# # Open camera
+# camera = cv2.VideoCapture(0)
+#
+# # Warm up camera
+# for _ in range(5):
+#     ret, frame = camera.read()
+#
+# if ret:
+#     # Process the captured frame
+#     image_rgb, orientation, mask, syringe_start_col = segment(frame)
+#     rubber_mask, start_col, end_col = detect_plunger(image_rgb, mask)
+#
+#     # Visualize final results
+#     plt.figure(figsize=(15, 5))
+#
+#     # Original with mask overlay
+#     plt.subplot(131)
+#     plt.imshow(image_rgb)
+#     plt.imshow(mask, alpha=0.3)
+#     plt.axvline(
+#         syringe_start_col, color="yellow", linestyle="--", label="Syringe Start"
+#     )
+#     plt.title(f"Segmentation Result\nOrientation: {orientation}")
+#     plt.axis("off")
+#     plt.legend()
+#
+#     # Plunger detection
+#     plt.subplot(132)
+#     plt.imshow(rubber_mask, cmap="gray")
+#     plt.axvline(start_col, color="lime", linestyle="--", label="Plunger Start")
+#     plt.axvline(end_col, color="orange", linestyle="--", label="Plunger End")
+#     plt.title("Plunger Detection")
+#     plt.legend()
+#     plt.axis("off")
+#
+#     # Combined view
+#     plt.subplot(133)
+#     plt.imshow(image_rgb)
+#     plt.imshow(rubber_mask, alpha=0.5, cmap="Reds")
+#     plt.title("Combined View")
+#     plt.axis("off")
+#
+#     plt.tight_layout()
+#     plt.show()
+#
+#     # Save the captured frame if needed
+#     # cv2.imwrite("captured_frame.jpg", frame)
+#
+#     # Clean up
+#     camera.release()
+# else:
+#     print("Failed to capture image from camera")
