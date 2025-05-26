@@ -34,7 +34,7 @@ import glob
 import undistort
 
 # define chessboard pattern aspect ratio and square size
-pattern_size = (9, 3)  # (columns, rows) = (x, y) in OpenCV
+pattern_size = (17, 6)  # (columns, rows) = (x, y) in OpenCV
 square_size = 14.395  # mm
 
 
@@ -134,7 +134,7 @@ def calibrate():
 
     # save calibration data to file
     np.savez(
-        "vision/calibration_data.npz",
+        "calibration_data.npz",
         mtx=mtx,
         dist=dist,
         H=H,
@@ -231,7 +231,7 @@ def load_calibration_data():
     Load existing calibration data
     Returns: mtx, dist, H, newcameramtx
     """
-    data = np.load("vision/calibration_data.npz")
+    data = np.load("calibration_data.npz")
 
     # Step 2: Extract existing data
     mtx = data["mtx"]
@@ -281,6 +281,10 @@ def redo_bounding_box():
     new_bounding_box = (r[0], r[1], r[0] + r[2], r[1] + r[3])
     print("New bounding box:", new_bounding_box)
 
+    # pixel to length ratio from bounding box
+    step_real_width = 10.4  # inches
+    new_ratio = r[2] / step_real_width
+
     # save updated data back
     np.savez(
         "calibration_data.npz",
@@ -289,7 +293,7 @@ def redo_bounding_box():
         H=H,
         newcameramtx=newcameramtx,
         bounding_box=new_bounding_box,
-        pixel_to_step_ratio=pixel_to_step_ratio,
+        pixel_to_step_ratio=new_ratio,
     )
 
     # Verify the save
@@ -298,57 +302,5 @@ def redo_bounding_box():
     print("\nBounding box updated successfully!")
 
 
-def find_pixel_to_length_ratio():
-    """
-    Use bounding box to find the distance between the edges of the grey step for sending the right step value to arduino
-    Returns: ratio of pixel-to-real distance
-
-    """
-
-    # open camera
-    camera = cv.VideoCapture(0)
-    # warm up camera
-    for _ in range(5):
-        # take image
-        ret, latest_frame = camera.read()
-
-    # undistort frame
-    undistorted_frame = (
-        latest_frame  # undistort.undistort_img(latest_frame, display=False)
-    )
-
-    # select bounds of the grey step
-    r = cv.selectROI(
-        "Select ends of the grey step for distance mapping",
-        undistorted_frame,
-        fromCenter=False,
-        showCrosshair=True,
-    )
-    print("Distance mapping bounding box:", r)  # (x, y, width, height)
-    cv.destroyAllWindows()
-
-    step_real_width = 10.4  # inches
-    new_ratio = r[2] / step_real_width
-
-    # update bounding box
-    mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio = (
-        load_calibration_data()
-    )
-
-    # save updated data back
-    np.savez(
-        "calibration_data.npz",
-        mtx=mtx,
-        dist=dist,
-        H=H,
-        newcameramtx=newcameramtx,
-        bounding_box=bounding_box,
-        pixel_to_step_ratio=new_ratio,
-    )
-
-    print("new pixel-to-length ratio: ", new_ratio)
-
-
 # calibrate()
 redo_bounding_box()
-# find_pixel_to_length_ratio()
