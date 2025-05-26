@@ -2,6 +2,19 @@ import cv2
 import segment
 import undistort
 import matplotlib.pyplot as plt
+import serial
+import time
+
+# serial
+arduino_port = "/dev/cu.usbmodem114101"
+baud_rate = 115200
+ser = serial.Serial(arduino_port, baud_rate, timeout=1)
+time.sleep(2)  # wait for Arduino to reset
+while True:
+    line = ser.readline().decode().strip()
+    if line == "SNAP":
+        print("Received SNAP from Arduino.")
+        break
 
 # # Open camera
 camera = cv2.VideoCapture(0)
@@ -12,33 +25,61 @@ for _ in range(5):
 
 undistorted_frame = latest_frame #undistort.undistort_img(latest_frame, display=False)
 
-# latest_frame = cv2.imread("in_situ/photo_1747768586.jpg")
+# get orientation and syringe mask
+image_rgb, orientation, mask, syringe_start_col = segment.segment(
+    undistorted_frame
+)
 
-image_rgb, orientation, mask = segment.segment(latest_frame)
+# get plunger position
+_, plunger_start_col, plunger_end_col = segment.detect_plunger(image_rgb, mask)
 
-rubber_mask, start_col, end_col = segment.detect_plunger(image_rgb, mask)
+# calculate cut
+error = 30
+cut_steps, where_to_move, where_to_cut = segment.get_cut(
+    syringe_start_col,
+    plunger_start_col,
+    plunger_end_col,
+    orientation,
+    error,
+)
 
-print(start_col)
-print(end_col)
+msg = f"<d{orientation}c{cut_steps}>"
+print(f"sent {msg} to arduino")
+ser.write(msg.encode('utf-8'))
+ser.close()
 
-fig0, ax0 = plt.subplots()
-ax0.imshow(image_rgb)
+# set up plot
+fig, ax = plt.subplots()
+image_disp = ax.imshow(image_rgb)
+mask_disp = ax.imshow(mask, alpha=0.5)
 
-# --- Step 4: Create first figure: image + mask overlay ---
-fig1, ax1 = plt.subplots()
-ax1.imshow(image_rgb)
-ax1.imshow(mask, alpha=0.5)
-ax1.set_title("Predicted Mask from SAM")
-ax1.axis('off')
+# blades
+_, _, _, _, _, _, pixels_to_length_ratio = undistort.load_calibration_data()
+blade_line_L = ax.axvline(
+   segment.BLADE_POS_LEFT*pixels_to_length_ratio , color="red", linestyle="--", label="Blade L"
+)
+blade_line_R = ax.axvline(
+   segment.BLADE_POS_RIGHT*pixels_to_length_ratio , color="red", linestyle="--", label="Blade R"
+)
 
-# --- Step 5: Create second figure: rubber mask + bounding lines ---
-fig2, ax2 = plt.subplots()
-ax2.imshow(rubber_mask, cmap='gray')
-ax2.axvline(start_col, color='lime', linestyle='--', label='Window Start')
-ax2.axvline(end_col, color='orange', linestyle='--', label='Window End')
-ax2.set_title("Detected Black Rubber in Syringe")
-ax2.axis('off')
-ax2.legend(loc='lower center')
+where_to_move_line = ax.axvline(where_to_move*pixels_to_length_ratio, color="green", linestyle="--", label="where_to_move")
+where_to_cut_line = ax.axvline(where_to_cut*pixels_to_length_ratio, color="blue", linestyle="--", label="where_to_cut")
 
-# --- Step 6: Show both figures ---
+# plunger
+# plunger_pos = sum([plunger_start_col, plunger_end_col]) / len(
+#     [plunger_start_col, plunger_end_col]
+# )
+# plunger_line = ax.axvline(
+#     plunger_pos, color="lime", linestyle="--", label="Window Start"
+# )
+ax.set_title("Predicted Mask from SAM")
+ax.axis("off")
+# add orientation text below image
+orientation_text = fig.text(0.5, 0.05, orientation, ha="center", fontsize=12)
+
+# update data in existing plot objects
+mask_disp.set_alpha(0.5)
+mask_disp.set_cmap("gray")
+
+plt.legend()
 plt.show()

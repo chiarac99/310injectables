@@ -62,7 +62,7 @@ int targetPaddlePos = 0;
 uint8_t paddleTargetReached = 1; // bool for state machine to know when a target has been reached
 
 #define PADDLE_HOME_POS 0
-#define PADDLE_AWAY_FROM_HOME_POS 500 // 5 x 200 steps (1 x rev)
+#define PADDLE_AWAY_FROM_HOME_POS 1355 // TODO: 10" for now (0.00738"/step), need to change for 11.25" when paddle is set up properly for short extrusion
 
 // states
 typedef enum {
