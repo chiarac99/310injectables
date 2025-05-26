@@ -43,7 +43,7 @@ int cutStepCount = 0;
 #define DIR_PIN_PADDLE 6
 #define STEP_PIN_PADDLE 7
 #define HOMING_INTERVAL_PADDLE 2500 // microseconds/step
-#define FAST_INTERVAL_PADDLE 1250 // microseconds/step
+#define FAST_INTERVAL_PADDLE 800 //1250 // microseconds/step
 char syringeDir;  // dir of syringe (determines where to send paddle before repositioning)
 int syringeCut;  // position in pixels of where to cut
 int paddlePos = 0;  // saves current position of paddle
@@ -111,7 +111,7 @@ void loop() {
   stateHandler();
 
   // move step/cut actuators if appropriate
-  moveActuators();
+  // moveActuators();
 
   // move paddle if appropriate
   updatePaddleDir();
@@ -465,7 +465,7 @@ uint8_t receivedImgOutput(void) {
   // where d is direction the syringe is pointing: 'L' or 'R'
   // and c is where to cut in pixels (int)
 
-  String buf = "";
+  static String buf = "";
   static uint8_t data_packet_started = 0;
   static uint8_t done = 0;
 
