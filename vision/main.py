@@ -72,7 +72,7 @@ def process_frame():
 
         # calculate cut
         error = 30
-        cut = segment.get_cut(
+        cut_steps = segment.get_cut(
             syringe_start_col,
             plunger_start_col,
             plunger_end_col,

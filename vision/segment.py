@@ -82,6 +82,12 @@ def segment(img):
     largest_label = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
     mask = (labels == largest_label).astype(np.uint8)
 
+    # Check if object is present (based on area)
+    syringe_area = stats[largest_label, cv2.CC_STAT_AREA]
+    if syringe_area < 5000:  # Threshold may need tuning
+        print("No syringe detected.")
+        return image_rgb, None, np.zeros_like(mask), None, None
+
     # x_indices = np.any(main_component_mask, axis=0)
     # x_start = np.argmax(x_indices)
     # x_end = len(x_indices) - 1 - np.argmax(x_indices[::-1])
@@ -102,6 +108,8 @@ def segment(img):
     max_width_col = np.argmax(column_sums)
     max_width_value = column_sums[max_width_col]
 
+    print(f"max width value = {max_width_value}")
+
     # Determine syringe orientation
     x_foreground = np.any(mask, axis=0)
     x_coords = np.where(x_foreground)[0]
@@ -110,11 +118,13 @@ def segment(img):
     if max_width_col < x_center:
         orientation = "R"  # Needle pointing RIGHT
         syringe_start_col = np.min(x_coords)
+        syringe_end_col = np.max(x_coords)
     else:
         orientation = "L"  # Needle pointing LEFT
         syringe_start_col = np.max(x_coords)
+        syringe_end_col = np.min(x_coords)
 
-    return image_rgb, orientation, mask, syringe_start_col
+    return image_rgb, orientation, mask, syringe_start_col, syringe_end_col
 
 
 def detect_plunger(img, mask):
@@ -244,55 +254,64 @@ def get_cut(flange_position, plunger_start, plunger_end, orientation, error):
 
 # Example usage
 
-# # Open camera
-# camera = cv2.VideoCapture(0)
-#
-# # Warm up camera
-# for _ in range(5):
-#     ret, frame = camera.read()
-#
-# if ret:
-#     # Process the captured frame
-#     image_rgb, orientation, mask, syringe_start_col = segment(frame)
-#     rubber_mask, start_col, end_col = detect_plunger(image_rgb, mask)
-#
-#     # Visualize final results
-#     plt.figure(figsize=(15, 5))
-#
-#     # Original with mask overlay
-#     plt.subplot(131)
-#     plt.imshow(image_rgb)
-#     plt.imshow(mask, alpha=0.3)
-#     plt.axvline(
-#         syringe_start_col, color="yellow", linestyle="--", label="Syringe Start"
-#     )
-#     plt.title(f"Segmentation Result\nOrientation: {orientation}")
-#     plt.axis("off")
-#     plt.legend()
-#
-#     # Plunger detection
-#     plt.subplot(132)
-#     plt.imshow(rubber_mask, cmap="gray")
-#     plt.axvline(start_col, color="lime", linestyle="--", label="Plunger Start")
-#     plt.axvline(end_col, color="orange", linestyle="--", label="Plunger End")
-#     plt.title("Plunger Detection")
-#     plt.legend()
-#     plt.axis("off")
-#
-#     # Combined view
-#     plt.subplot(133)
-#     plt.imshow(image_rgb)
-#     plt.imshow(rubber_mask, alpha=0.5, cmap="Reds")
-#     plt.title("Combined View")
-#     plt.axis("off")
-#
-#     plt.tight_layout()
-#     plt.show()
-#
-#     # Save the captured frame if needed
-#     # cv2.imwrite("captured_frame.jpg", frame)
-#
-#     # Clean up
-#     camera.release()
-# else:
-#     print("Failed to capture image from camera")
+# Open camera
+camera = cv2.VideoCapture(0)
+
+# Warm up camera
+for _ in range(5):
+    ret, frame = camera.read()
+
+if ret:
+    # Process the captured frame
+    image_rgb, orientation, mask, syringe_start_col, syringe_end_col = segment(frame)
+    if orientation != None:
+        rubber_mask, start_col, end_col = detect_plunger(image_rgb, mask)
+
+        # Visualize final results
+        plt.figure(figsize=(15, 5))
+
+        # Original with mask overlay
+        plt.subplot(131)
+        plt.imshow(image_rgb)
+        plt.imshow(mask, alpha=0.3)
+        plt.axvline(
+            syringe_start_col, color="yellow", linestyle="--", label="Syringe Start"
+        )
+        plt.axvline(
+            syringe_end_col, color="purple", linestyle="--", label="Syringe End"
+        )
+        plt.title(f"Segmentation Result\nOrientation: {orientation}")
+        plt.axis("off")
+        plt.legend()
+
+        # Plunger detection
+        plt.subplot(132)
+        plt.imshow(rubber_mask, cmap="gray")
+        plt.axvline(start_col, color="lime", linestyle="--", label="Plunger Start")
+        plt.axvline(end_col, color="orange", linestyle="--", label="Plunger End")
+        plt.title("Plunger Detection")
+        plt.legend()
+        plt.axis("off")
+
+        # Combined view
+        plt.subplot(133)
+        plt.imshow(image_rgb)
+        plt.imshow(rubber_mask, alpha=0.5, cmap="Reds")
+        plt.title("Combined View")
+        plt.axis("off")
+
+        plt.tight_layout()
+        plt.show()
+
+        # Save the captured frame if needed
+        # cv2.imwrite("captured_frame.jpg", frame)
+
+        # Clean up
+        camera.release()
+    else:
+        cv2.imshow("No syringe present!", frame)
+        cv2.waitKey(0)  # press 0 to close
+        cv2.destroyAllWindows()
+
+else:
+    print("Failed to capture image from camera")
