@@ -18,13 +18,16 @@ import undistort
 
 # from vision.undistort import undistort_img
 # Constants
-SAM_CHECKPOINT = "sam_vit_b_01ec64.pth"
+# SAM_CHECKPOINT = "sam_vit_b_01ec64.pth"
+SAM_CHECKPOINT = (
+    "/Users/venkatasaisarangrandhe/Documents/ME310C/Testing/sam_vit_b_01ec64.pth"
+)
 MODEL_TYPE = "vit_b"
 
 # Hardware Constants (in inches)
-BLADE_POS_LEFT = 3.4#3.625
-BLADE_POS_RIGHT = 7.85#7.625
-STEPS_TO_LENGTH_RATIO = 1355/10  #135.5  # 200 steps/rev, 0.47" diameter pulley
+BLADE_POS_LEFT = 3.4  # 3.625
+BLADE_POS_RIGHT = 7.85  # 7.625
+STEPS_TO_LENGTH_RATIO = 1355 / 10  # 135.5  # 200 steps/rev, 0.47" diameter pulley
 MAX_PADDLE_POS = 10.4
 
 
@@ -234,7 +237,9 @@ def get_cut(flange_position, plunger_start, plunger_end, orientation, error):
         if where_to_cut < BLADE_POS_LEFT:
             where_to_move = 0
         else:
-            where_to_move = BLADE_POS_LEFT - where_to_cut + flange_position/pixels_to_length_ratio
+            where_to_move = (
+                BLADE_POS_LEFT - where_to_cut + flange_position / pixels_to_length_ratio
+            )
 
     elif orientation == "R":
         # Syringe pointed right - use left side of plunger window
@@ -243,7 +248,9 @@ def get_cut(flange_position, plunger_start, plunger_end, orientation, error):
             where_to_move = 0
         else:
             where_to_move = (
-                flange_position/pixels_to_length_ratio - where_to_cut + BLADE_POS_RIGHT
+                flange_position / pixels_to_length_ratio
+                - where_to_cut
+                + BLADE_POS_RIGHT
             )
 
     else:
