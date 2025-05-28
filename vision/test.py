@@ -39,7 +39,7 @@ try:
         )
 
         # get orientation and syringe mask
-        image_rgb, orientation, mask, syringe_start_col = segment.segment(
+        image_rgb, orientation, mask, syringe_start_col, syringe_end_col = segment.segment(
             undistorted_frame
         )
 
@@ -50,6 +50,7 @@ try:
         error = 30
         cut_steps, where_to_move, where_to_cut = segment.get_cut(
             syringe_start_col,
+            syringe_end_col,
             plunger_start_col,
             plunger_end_col,
             orientation,

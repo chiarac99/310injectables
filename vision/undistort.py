@@ -25,8 +25,9 @@ def load_calibration_data():
     newcameramtx = data["newcameramtx"]
     bounding_box = data["bounding_box"]
     pixel_to_step_ratio = data["pixel_to_step_ratio"]
+    step_gap_h = data["step_gap_h"]
 
-    return data, mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio
+    return data, mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio, step_gap_h
 
 
 def convert_distorted_coordinate_to_real_space(u, v):

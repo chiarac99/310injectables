@@ -132,6 +132,9 @@ def calibrate():
     # save initial guess at pixel to step ratio
     pixel_to_step_ratio = 112.4
 
+    # initialise step_gap_h
+    step_gap_h = 0
+
     # save calibration data to file
     np.savez(
         "calibration_data.npz",
@@ -141,6 +144,7 @@ def calibrate():
         newcameramtx=newcameramtx,
         bounding_box=bounding_box,
         pixel_to_step_ratio=pixel_to_step_ratio,
+        step_gap_h=step_gap_h,
     )
 
     # -------------------
@@ -240,8 +244,9 @@ def load_calibration_data():
     newcameramtx = data["newcameramtx"]
     bounding_box = data["bounding_box"]
     pixel_to_step_ratio = data["pixel_to_step_ratio"]
+    step_gap_h = data["step_gap_h"]
 
-    return mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio
+    return mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio, step_gap_h
 
 
 def redo_bounding_box():
@@ -265,25 +270,50 @@ def redo_bounding_box():
     )
 
     # select bounding box
+    # First selection
     r = cv.selectROI(
-        "Select Bounding Box", undistorted_frame, fromCenter=False, showCrosshair=True
+        "Select Bounding Box for entire step", undistorted_frame, fromCenter=False, showCrosshair=True
     )
-    print("\nSelected ROI (x, y, width, height):", r)  # (x, y, width, height)
-    cv.destroyAllWindows()
+    print("\nSelected ROI (x, y, width, height):", r)
+    # Do NOT destroy windows here
 
-    # update bounding box
-    mtx, dist, H, newcameramtx, old_bounding_box, pixel_to_step_ratio = (
-        load_calibration_data()
-    )
-    print("Old bounding box:", old_bounding_box)
-
+    # Convert bounding box coordinates to integers and ensure they're within image bounds
     # find bounding box (x1, y1, x2, y2) for segment.py
     new_bounding_box = (r[0], r[1], r[0] + r[2], r[1] + r[3])
     print("New bounding box:", new_bounding_box)
+    h, w = undistorted_frame.shape[:2]
+    x1, y1, x2, y2 = [int(coord) for coord in new_bounding_box]
+    x1 = max(0, min(x1, w - 1))
+    y1 = max(0, min(y1, h - 1))
+    x2 = max(0, min(x2, w))
+    y2 = max(0, min(y2, h))
+
+    # Crop image using validated coordinates
+    new_img = undistorted_frame[y1:y2, x1:x2]
+
+    # Second selection
+    r2 = cv.selectROI(
+        "Select Bounding Box for step gap", new_img, fromCenter=False, showCrosshair=True
+    )
+
+
+    cv.destroyAllWindows()  # Destroy windows only once after both selections
+
+    # update bounding box
+    mtx, dist, H, newcameramtx, old_bounding_box, pixel_to_step_ratio, step_gap_h = (
+        load_calibration_data()
+    )
+    print("Old step gap:", old_bounding_box)
+
 
     # pixel to length ratio from bounding box
     step_real_width = 10.4  # inches
     new_ratio = r[2] / step_real_width
+
+    # now edit step gap height
+    # select bounding box
+    new_step_gap_h = r2[3]
+    print("\nSelected step gap :", r2[3])
 
     # save updated data back
     np.savez(
@@ -294,13 +324,32 @@ def redo_bounding_box():
         newcameramtx=newcameramtx,
         bounding_box=new_bounding_box,
         pixel_to_step_ratio=new_ratio,
+        step_gap_h=new_step_gap_h
     )
 
     # Verify the save
     data = np.load("calibration_data.npz")
     print("Verified saved bounding box:", data["bounding_box"])
+    print("Verified saved step gap:", data["step_gap_h"])
     print("\nBounding box updated successfully!")
 
 
+def generate_new_calibration_file():
+    """
+    Generates empty calibration file
+    """
+    np.savez(
+        "calibration_data.npz",
+        mtx=0,
+        dist=0,
+        H=0,
+        newcameramtx=0,
+        bounding_box=0,
+        pixel_to_step_ratio=0,
+        step_gap_h=0
+    )
+
+
 # calibrate()
+generate_new_calibration_file()
 redo_bounding_box()

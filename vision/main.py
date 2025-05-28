@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 
 import segment
 import undistort
+from vision.segment import syringe_end_col
 
 # Mode control: True for single frame, False for continuous
 single_frame = True
@@ -74,6 +75,7 @@ def process_frame():
         error = 30
         cut_steps = segment.get_cut(
             syringe_start_col,
+            syringe_end_col,
             plunger_start_col,
             plunger_end_col,
             orientation,
