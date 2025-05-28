@@ -72,14 +72,16 @@ def process_frame():
         _, plunger_start_col, plunger_end_col = segment.detect_plunger(image_rgb, mask)
 
         # calculate cut
-        error = 30
+        errorR = 60
+        errorL = 30
         cut_steps = segment.get_cut(
             syringe_start_col,
             syringe_end_col,
             plunger_start_col,
             plunger_end_col,
             orientation,
-            error,
+            errorR,
+            errorL
         )
 
         # save image

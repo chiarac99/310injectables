@@ -13,6 +13,7 @@ import torch
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
+from numpy.ma.core import where
 from segment_anything import sam_model_registry, SamPredictor
 import undistort
 
@@ -218,7 +219,8 @@ def detect_plunger(img, mask):
     for col in range(start_limit, end_limit - window_size + 1):
         mask_window = mask[:, col : col + window_size]
         image_window = rubber_mask[:, col : col + window_size]
-        valid_pixels = image_window[mask_window]
+        # valid_pixels = image_window[mask_window]
+        valid_pixels = image_window[mask_window > 0]
 
         if valid_pixels.size == 0:
             continue
@@ -228,10 +230,10 @@ def detect_plunger(img, mask):
         if ratio > max_ratio:
             max_ratio = ratio
             best_start = col
-            plt.imshow(rubber_mask, cmap='gray')
-            plt.axvline(best_start, color="yellow", linestyle="--", label="Syringe Start")
-            plt.axis('off')
-            plt.show()
+            # plt.imshow(rubber_mask, cmap='gray')
+            # plt.axvline(best_start, color="yellow", linestyle="--", label="Syringe Start")
+            # plt.axis('off')
+            # plt.show()
 
 
     start_col = best_start
@@ -240,7 +242,7 @@ def detect_plunger(img, mask):
     return rubber_mask, start_col, end_col
 
 
-def get_cut(flange_position, needle_tip_position, plunger_start, plunger_end, orientation, error):
+def get_cut(flange_position, needletip_position, plunger_start, plunger_end, orientation, errorR, errorL):
     """
     Calculate the number of steps needed to move the paddle for cutting.
 
@@ -249,42 +251,43 @@ def get_cut(flange_position, needle_tip_position, plunger_start, plunger_end, or
         plunger_start (int): Starting position of plunger window
         plunger_end (int): Ending position of plunger window
         orientation (str): Syringe orientation ('L' or 'R')
-        error (int): Error margin in pixels
+        errorR (int): Error margin in pixels for the right oriented syringe; this might have to be consistently larger than L error bc the plunger is detected left to right
+        errorL (int): Error margin in pixels for the left oriented syringe
 
     Returns:
         int: Number of steps to move the paddle
     """
     # Load calibration data
-    _, _, _, _, _, _, pixels_to_length_ratio = undistort.load_calibration_data()
+    _, _, _, _, _, _, pixels_to_length_ratio, _ = undistort.load_calibration_data()
 
     if orientation == "L":
         # Syringe pointed left - use right side of plunger window
-        where_to_cut = (plunger_end + error) / pixels_to_length_ratio
+        where_to_cut = (plunger_end + errorL) / pixels_to_length_ratio
 
         # If distance btw where to cut and flange is too long for distance btw two blades, discard syringe
-        if (needle_tip_position - where_to_cut) > MAX_NEEDLE_LEN:
+        if (where_to_cut - needletip_position / pixels_to_length_ratio) > MAX_NEEDLE_LEN:
             print("Syringe too long!")
-            where_to_move = MAX_PADDLE_POS
+            where_to_move = 0
         elif where_to_cut < BLADE_POS_LEFT:
             where_to_move = 0
         else:
             where_to_move = (
-                BLADE_POS_LEFT - where_to_cut + flange_position / pixels_to_length_ratio
+                    BLADE_POS_LEFT - where_to_cut + flange_position / pixels_to_length_ratio
             )
 
     elif orientation == "R":
         # Syringe pointed right - use left side of plunger window
-        where_to_cut = (plunger_end - error) / pixels_to_length_ratio
-        if (where_to_cut - needle_tip_position) > MAX_NEEDLE_LEN:
+        where_to_cut = (plunger_end - errorR) / pixels_to_length_ratio
+        if (needletip_position / pixels_to_length_ratio - where_to_cut) > MAX_NEEDLE_LEN:
             print("Syringe too long!")
-            where_to_move = 0
+            where_to_move = MAX_PADDLE_POS
         elif where_to_cut > BLADE_POS_RIGHT:
             where_to_move = 0
         else:
             where_to_move = (
-                flange_position / pixels_to_length_ratio
-                - where_to_cut
-                + BLADE_POS_RIGHT
+                    flange_position / pixels_to_length_ratio
+                    - where_to_cut
+                    + BLADE_POS_RIGHT
             )
 
     elif orientation is None:
@@ -312,41 +315,102 @@ if ret:
     if orientation != None:
         rubber_mask, start_col, end_col = detect_plunger(image_rgb, mask)
 
-        # Visualize final results
-        plt.figure(figsize=(15, 5))
-
-        # Original with mask overlay
-        plt.subplot(131)
-        plt.imshow(image_rgb)
-        plt.imshow(mask, alpha=0.3)
-        plt.axvline(
-            syringe_start_col, color="yellow", linestyle="--", label="Syringe Start"
+        # calculate cut
+        errorR = 60
+        errorL = 30
+        cut_steps, where_to_move, where_to_cut = get_cut(
+            syringe_start_col,
+            syringe_end_col,
+            start_col,
+            end_col,
+            orientation,
+            errorR,
+            errorL
         )
-        plt.axvline(
-            syringe_end_col, color="purple", linestyle="--", label="Syringe End"
+
+        msg = f"<d{orientation}c{cut_steps}>"
+        print(f"sent {msg} to arduino")
+
+        # set up plot
+        fig, ax = plt.subplots()
+        image_disp = ax.imshow(image_rgb)
+        mask_disp = ax.imshow(mask, alpha=0.5)
+
+        # blades
+        _, _, _, _, _, _, pixels_to_length_ratio, _ = undistort.load_calibration_data()
+        blade_line_L = ax.axvline(
+            BLADE_POS_LEFT * pixels_to_length_ratio,
+            color="red",
+            linestyle="--",
+            label="Blade L",
         )
-        plt.title(f"Segmentation Result\nOrientation: {orientation}")
-        plt.axis("off")
+        blade_line_R = ax.axvline(
+            BLADE_POS_RIGHT * pixels_to_length_ratio,
+            color="red",
+            linestyle="--",
+            label="Blade R",
+        )
+
+        where_to_move_line = ax.axvline(
+            where_to_move * pixels_to_length_ratio,
+            color="green",
+            linestyle="--",
+            label="where_to_move",
+        )
+        where_to_cut_line = ax.axvline(
+            where_to_cut * pixels_to_length_ratio,
+            color="blue",
+            linestyle="--",
+            label="where_to_cut",
+        )
+
+        ax.set_title("Predicted Mask from SAM")
+        ax.axis("off")
+        # add orientation text below image
+        orientation_text = fig.text(0.5, 0.05, orientation, ha="center", fontsize=12)
+
+        # update data in existing plot objects
+        mask_disp.set_alpha(0.5)
+        mask_disp.set_cmap("gray")
+
         plt.legend()
-
-        # Plunger detection
-        plt.subplot(132)
-        plt.imshow(rubber_mask, cmap="gray")
-        plt.axvline(start_col, color="lime", linestyle="--", label="Plunger Start")
-        plt.axvline(end_col, color="orange", linestyle="--", label="Plunger End")
-        plt.title("Plunger Detection")
-        plt.legend()
-        plt.axis("off")
-
-        # Combined view
-        plt.subplot(133)
-        plt.imshow(image_rgb)
-        plt.imshow(rubber_mask, alpha=0.5, cmap="Reds")
-        plt.title("Combined View")
-        plt.axis("off")
-
-        plt.tight_layout()
         plt.show()
+
+        # # Visualize final results
+        # plt.figure(figsize=(15, 5))
+        #
+        # # Original with mask overlay
+        # plt.subplot(131)
+        # plt.imshow(image_rgb)
+        # plt.imshow(mask, alpha=0.3)
+        # plt.axvline(
+        #     syringe_start_col, color="yellow", linestyle="--", label="Syringe Start"
+        # )
+        # plt.axvline(
+        #     syringe_end_col, color="purple", linestyle="--", label="Syringe End"
+        # )
+        # plt.title(f"Segmentation Result\nOrientation: {orientation}")
+        # plt.axis("off")
+        # plt.legend()
+        #
+        # # Plunger detection
+        # plt.subplot(132)
+        # plt.imshow(rubber_mask, cmap="gray")
+        # plt.axvline(start_col, color="lime", linestyle="--", label="Plunger Start")
+        # plt.axvline(end_col, color="orange", linestyle="--", label="Plunger End")
+        # plt.title("Plunger Detection")
+        # plt.legend()
+        # plt.axis("off")
+        #
+        # # Combined view
+        # plt.subplot(133)
+        # plt.imshow(image_rgb)
+        # plt.imshow(rubber_mask, alpha=0.5, cmap="Reds")
+        # plt.title("Combined View")
+        # plt.axis("off")
+        #
+        # plt.tight_layout()
+        # plt.show()
 
         # Save the captured frame if needed
         # cv2.imwrite("captured_frame.jpg", frame)

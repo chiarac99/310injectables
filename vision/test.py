@@ -47,14 +47,16 @@ try:
         _, plunger_start_col, plunger_end_col = segment.detect_plunger(image_rgb, mask)
 
         # calculate cut
-        error = 30
+        errorR = 60
+        errorL = 30
         cut_steps, where_to_move, where_to_cut = segment.get_cut(
             syringe_start_col,
             syringe_end_col,
             plunger_start_col,
             plunger_end_col,
             orientation,
-            error,
+            errorR,
+            errorL
         )
 
         msg = f"<d{orientation}c{cut_steps}>"
