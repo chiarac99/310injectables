@@ -20,17 +20,17 @@ import undistort
 # from vision.undistort import undistort_img
 # Constants
 # SAM_CHECKPOINT = "sam_vit_b_01ec64.pth"
-SAM_CHECKPOINT = (
-    "sam_vit_b_01ec64.pth"
-)
+SAM_CHECKPOINT = "/Users/venkatasaisarangrandhe/sam_weights/sam_vit_b_01ec64.pth"
 MODEL_TYPE = "vit_b"
 
 # Hardware Constants (in inches)
-BLADE_POS_LEFT = 3.4  # 3.625
-BLADE_POS_RIGHT = 7.85  # 7.625
+BLADE_POS_LEFT = 3.5  # 3.625
+BLADE_POS_RIGHT = 7.5  # 7.625
 STEPS_TO_LENGTH_RATIO = 1355 / 10  # 135.5  # 200 steps/rev, 0.47" diameter pulley
-MAX_PADDLE_POS = 10.4 # inches / TODO: update this to actual length when paddle extrusion is replaced
-MAX_NEEDLE_LEN = 3.4 # inches / maximum length of needle part we can process, this length is equal to the distance between a blade and the side sheet (i.e. side channel width)
+MAX_PADDLE_POS = (
+    11  # inches / TODO: update this to actual length when paddle extrusion is replaced
+)
+MAX_NEEDLE_LEN = 3.4  # inches / maximum length of needle part we can process, this length is equal to the distance between a blade and the side sheet (i.e. side channel width)
 
 
 def segment(img):
@@ -84,42 +84,29 @@ def segment(img):
 
     # Extract largest component to remove noise
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(cleaned_mask)
+
+    # Check if any components were found
+    if num_labels <= 1:  # Only background
+        print("No syringe detected - no components found")
+        return image_rgb, None, np.zeros_like(mask), None, None
+
     largest_label = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
     mask = (labels == largest_label).astype(np.uint8)
-
-    # Remove step gap rows from mask
-    # We do this now instead of earlier bc we captured the whole syringe with a larger bounding box
-    # Convert bounding box coordinates to integers and ensure they're within image bounds
-    h, w = mask.shape[:2]
-    y1 = int(step_gap_h)
-    y2 = h
-    # Crop image using validated coordinates
-    cropped_mask = mask[y1:y2, :]
-    # Restore cropped_mask to original mask coordinates
-    restored_mask = np.zeros_like(mask)
-    restored_mask[y1:y2, :] = cropped_mask
-    mask = restored_mask
 
     # Check if object is present (based on area)
     syringe_area = stats[largest_label, cv2.CC_STAT_AREA]
     if syringe_area < 5000:  # Threshold may need tuning
-        print("No syringe detected.")
+        print("No syringe detected - area too small")
         return image_rgb, None, np.zeros_like(mask), None, None
 
-    # x_indices = np.any(main_component_mask, axis=0)
-    # x_start = np.argmax(x_indices)
-    # x_end = len(x_indices) - 1 - np.argmax(x_indices[::-1])
-    # syringe_length = x_end - x_start
-    # print("Syringe length:", syringe_length)
-
-    # The above commented code is used to get the length of the syringe. Use this to get the x_start and x_end of the syringe. But in my opinion, since the mask is cleaned, (Chiara) your code of using np.argmax and min should work now
-
-    # plt.figure()
-    # plt.imshow(image_rgb)
-    # plt.imshow(mask, alpha=0.5)
-    # plt.title("Segmentation Result")
-    # plt.axis("off")
-    # plt.show()
+    # Remove step gap rows from mask
+    h, w = mask.shape[:2]
+    y1 = int(step_gap_h)
+    y2 = h
+    cropped_mask = mask[y1:y2, :]
+    restored_mask = np.zeros_like(mask)
+    restored_mask[y1:y2, :] = cropped_mask
+    mask = restored_mask
 
     # Analyze mask properties
     column_sums = np.sum(mask, axis=0)
@@ -128,9 +115,19 @@ def segment(img):
 
     print(f"max width value = {max_width_value}")
 
+    # Check if max width is too small
+    if max_width_value < 20:  # Adjust threshold as needed
+        print("No syringe detected - width too small")
+        return image_rgb, None, np.zeros_like(mask), None, None
+
     # Determine syringe orientation
     x_foreground = np.any(mask, axis=0)
     x_coords = np.where(x_foreground)[0]
+
+    if len(x_coords) == 0:
+        print("No syringe detected - no foreground pixels")
+        return image_rgb, None, np.zeros_like(mask), None, None
+
     x_center = int(np.mean(x_coords))
 
     if max_width_col < x_center:
@@ -235,14 +232,21 @@ def detect_plunger(img, mask):
             # plt.axis('off')
             # plt.show()
 
-
     start_col = best_start
     end_col = best_start + window_size
 
     return rubber_mask, start_col, end_col
 
 
-def get_cut(flange_position, needletip_position, plunger_start, plunger_end, orientation, errorR, errorL):
+def get_cut(
+    flange_position,
+    needletip_position,
+    plunger_start,
+    plunger_end,
+    orientation,
+    errorR,
+    errorL,
+):
     """
     Calculate the number of steps needed to move the paddle for cutting.
 
@@ -251,11 +255,15 @@ def get_cut(flange_position, needletip_position, plunger_start, plunger_end, ori
         plunger_start (int): Starting position of plunger window
         plunger_end (int): Ending position of plunger window
         orientation (str): Syringe orientation ('L' or 'R')
-        errorR (int): Error margin in pixels for the right oriented syringe; this might have to be consistently larger than L error bc the plunger is detected left to right
+        errorR (int): Error margin in pixels for the right oriented syringe
         errorL (int): Error margin in pixels for the left oriented syringe
 
     Returns:
-        int: Number of steps to move the paddle
+        tuple: (
+            steps (int): Number of steps to move the paddle,
+            where_to_move (float): Position to move paddle to in inches,
+            where_to_cut (float): Position to cut at in inches
+        )
     """
     # Load calibration data
     _, _, _, _, _, _, pixels_to_length_ratio, _ = undistort.load_calibration_data()
@@ -265,29 +273,33 @@ def get_cut(flange_position, needletip_position, plunger_start, plunger_end, ori
         where_to_cut = (plunger_end + errorL) / pixels_to_length_ratio
 
         # If distance btw where to cut and flange is too long for distance btw two blades, discard syringe
-        if (where_to_cut - needletip_position / pixels_to_length_ratio) > MAX_NEEDLE_LEN:
+        if (
+            where_to_cut - needletip_position / pixels_to_length_ratio
+        ) > MAX_NEEDLE_LEN:
             print("Syringe too long!")
             where_to_move = 0
         elif where_to_cut < BLADE_POS_LEFT:
             where_to_move = 0
         else:
             where_to_move = (
-                    BLADE_POS_LEFT - where_to_cut + flange_position / pixels_to_length_ratio
+                BLADE_POS_LEFT - where_to_cut + flange_position / pixels_to_length_ratio
             )
 
     elif orientation == "R":
         # Syringe pointed right - use left side of plunger window
         where_to_cut = (plunger_end - errorR) / pixels_to_length_ratio
-        if (needletip_position / pixels_to_length_ratio - where_to_cut) > MAX_NEEDLE_LEN:
+        if (
+            needletip_position / pixels_to_length_ratio - where_to_cut
+        ) > MAX_NEEDLE_LEN:
             print("Syringe too long!")
             where_to_move = MAX_PADDLE_POS
         elif where_to_cut > BLADE_POS_RIGHT:
             where_to_move = 0
         else:
             where_to_move = (
-                    flange_position / pixels_to_length_ratio
-                    - where_to_cut
-                    + BLADE_POS_RIGHT
+                flange_position / pixels_to_length_ratio
+                - where_to_cut
+                + BLADE_POS_RIGHT
             )
 
     elif orientation is None:
@@ -301,7 +313,7 @@ def get_cut(flange_position, needletip_position, plunger_start, plunger_end, ori
 
 
 # Example usage
-
+"""
 # Open camera
 camera = cv2.VideoCapture(0)
 
@@ -325,7 +337,7 @@ if ret:
             end_col,
             orientation,
             errorR,
-            errorL
+            errorL,
         )
 
         msg = f"<d{orientation}c{cut_steps}>"
@@ -424,3 +436,4 @@ if ret:
 
 else:
     print("Failed to capture image from camera")
+"""

@@ -1,21 +1,19 @@
 import cv2
 import segment
 import undistort
-import matplotlib.pyplot as plt
 import serial
 import time
 
 # serial
-arduino_port = "/dev/cu.usbmodem14101"
+arduino_port = "/dev/cu.usbmodem11201"
 baud_rate = 115200
 ser = serial.Serial(arduino_port, baud_rate, timeout=1)
 time.sleep(2)  # wait for Arduino to reset
 
 # Open camera
 camera = cv2.VideoCapture(0)
-# warm up camera
+# warm up camera silently
 for _ in range(5):
-    # take image
     ret, _ = camera.read()
 
 try:
@@ -32,16 +30,23 @@ try:
                 print(f"Ignoring serial read error: {e}")
                 continue
 
-        # take new image
+        # take new image silently
         ret, latest_frame = camera.read()
-        undistorted_frame = (
-            latest_frame  # undistort.undistort_img(latest_frame, display=False)
-        )
+        if not ret:
+            print("Error: Could not capture frame")
+            continue
 
         # get orientation and syringe mask
-        image_rgb, orientation, mask, syringe_start_col, syringe_end_col = segment.segment(
-            undistorted_frame
+        image_rgb, orientation, mask, syringe_start_col, syringe_end_col = (
+            segment.segment(latest_frame)
         )
+
+        if orientation is None:
+            print("No syringe detected")
+            msg = "<dNc0>"  # Special message for no detection
+            print(f"sent {msg} to arduino")
+            ser.write(msg.encode("utf-8"))
+            continue
 
         # get plunger position
         _, plunger_start_col, plunger_end_col = segment.detect_plunger(image_rgb, mask)
@@ -56,57 +61,65 @@ try:
             plunger_end_col,
             orientation,
             errorR,
-            errorL
+            errorL,
         )
 
         msg = f"<d{orientation}c{cut_steps}>"
         print(f"sent {msg} to arduino")
         ser.write(msg.encode("utf-8"))
 
-        # set up plot
-        fig, ax = plt.subplots()
-        image_disp = ax.imshow(image_rgb)
-        mask_disp = ax.imshow(mask, alpha=0.5)
+        # Display basic info
+        print(f"Orientation: {orientation}")
+        print(f"Cut steps: {cut_steps}")
+        print(f"Where to move: {where_to_move:.2f} inches")
+        print(f"Where to cut: {where_to_cut:.2f} inches")
+        print("-" * 50)
 
-        # blades
-        _, _, _, _, _, _, pixels_to_length_ratio = undistort.load_calibration_data()
-        blade_line_L = ax.axvline(
-            segment.BLADE_POS_LEFT * pixels_to_length_ratio,
-            color="red",
-            linestyle="--",
-            label="Blade L",
-        )
-        blade_line_R = ax.axvline(
-            segment.BLADE_POS_RIGHT * pixels_to_length_ratio,
-            color="red",
-            linestyle="--",
-            label="Blade R",
-        )
-
-        where_to_move_line = ax.axvline(
-            where_to_move * pixels_to_length_ratio,
-            color="green",
-            linestyle="--",
-            label="where_to_move",
-        )
-        where_to_cut_line = ax.axvline(
-            where_to_cut * pixels_to_length_ratio,
-            color="blue",
-            linestyle="--",
-            label="where_to_cut",
-        )
-
-        ax.set_title("Predicted Mask from SAM")
-        ax.axis("off")
-        # add orientation text below image
-        orientation_text = fig.text(0.5, 0.05, orientation, ha="center", fontsize=12)
-
-        # update data in existing plot objects
-        mask_disp.set_alpha(0.5)
-        mask_disp.set_cmap("gray")
-
-        plt.legend()
-        plt.show()
+        # # Visualization code (uncomment to use)
+        # # set up plot
+        # fig, ax = plt.subplots()
+        # image_disp = ax.imshow(image_rgb)
+        # mask_disp = ax.imshow(mask, alpha=0.5)
+        #
+        # # blades
+        # _, _, _, _, _, _, pixels_to_length_ratio = undistort.load_calibration_data()
+        # blade_line_L = ax.axvline(
+        #     segment.BLADE_POS_LEFT * pixels_to_length_ratio,
+        #     color="red",
+        #     linestyle="--",
+        #     label="Blade L",
+        # )
+        # blade_line_R = ax.axvline(
+        #     segment.BLADE_POS_RIGHT * pixels_to_length_ratio,
+        #     color="red",
+        #     linestyle="--",
+        #     label="Blade R",
+        # )
+        #
+        # where_to_move_line = ax.axvline(
+        #     where_to_move * pixels_to_length_ratio,
+        #     color="green",
+        #     linestyle="--",
+        #     label="where_to_move",
+        # )
+        # where_to_cut_line = ax.axvline(
+        #     where_to_cut * pixels_to_length_ratio,
+        #     color="blue",
+        #     linestyle="--",
+        #     label="where_to_cut",
+        # )
+        #
+        # ax.set_title("Predicted Mask from SAM")
+        # ax.axis("off")
+        # # add orientation text below image
+        # orientation_text = fig.text(0.5, 0.05, orientation, ha="center", fontsize=12)
+        #
+        # # update data in existing plot objects
+        # mask_disp.set_alpha(0.5)
+        # mask_disp.set_cmap("gray")
+        #
+        # plt.legend()
+        # plt.show()
 
 except KeyboardInterrupt:
     print("\nExiting program...")
