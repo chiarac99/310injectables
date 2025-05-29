@@ -291,11 +291,50 @@ def redo_bounding_box():
     # Crop image using validated coordinates
     new_img = undistorted_frame[y1:y2, x1:x2]
 
-    # Second selection
+    # Second selection for step gap
+    # TODO: check this works!
     r2 = cv.selectROI(
         "Select Bounding Box for step gap", new_img, fromCenter=False, showCrosshair=True
     )
 
+    # third selection for blade positions
+    # List to store the clicked points
+    points = []
+
+    # Mouse callback function to record the clicks
+    def click_event(event, x, y, flags, param):
+        if event == cv.EVENT_LBUTTONDOWN and len(points) < 2:
+            points.append((x, y))
+            print(f"Point {len(points)}: ({x}, {y})")
+            # Draw a small circle where the user clicked
+            cv.circle(undistorted_frame, (x, y), 5, (0, 0, 255), -1)
+            cv.imshow("Click in two points where the blades are located", undistorted_frame)
+
+    cv.imshow("Click in two points where the blades are located", undistorted_frame)
+    cv.setMouseCallback("Click in two points where the blades are located", click_event)
+
+    print("Click two points on the image where the two blades are located...")
+    print("Press 'c' to exit")
+
+    # Wait until two points are clicked
+    while True:
+        key = cv.waitKey(1) & 0xFF
+        if len(points) == 2:
+            print("Two points selected.")
+            break
+        if key == 'c':
+            break
+
+    cv.destroyAllWindows()
+
+    # Access the coordinates
+    if len(points) == 2:
+        blade_xs = [points[0][0], points[1][0]]
+        bladeL_pixels_x = min(blade_xs)
+        bladeR_pixels_x = max(blade_xs)
+
+        print("BladeL x:", bladeL_pixels_x)
+        print("BladeR x:", bladeR_pixels_x)
 
     cv.destroyAllWindows()  # Destroy windows only once after both selections
 
