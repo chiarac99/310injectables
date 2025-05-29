@@ -27,7 +27,16 @@ def load_calibration_data():
     pixel_to_step_ratio = data["pixel_to_step_ratio"]
     step_gap_h = data["step_gap_h"]
 
-    return data, mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio, step_gap_h
+    return (
+        data,
+        mtx,
+        dist,
+        H,
+        newcameramtx,
+        bounding_box,
+        pixel_to_step_ratio,
+        step_gap_h,
+    )
 
 
 def convert_distorted_coordinate_to_real_space(u, v):
@@ -39,7 +48,9 @@ def convert_distorted_coordinate_to_real_space(u, v):
     """
 
     # load calibration data
-    data, mtx, dist, H, newcameramtx, pixel_to_step_ratio = load_calibration_data()
+    data, mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio, step_gap_h = (
+        load_calibration_data()
+    )
 
     src_pt = np.array([[u, v]], dtype=np.float32)
 
@@ -63,7 +74,9 @@ def convert_distorted_coordinate_to_pixel_space(u, v):
     """
 
     # load calibration data
-    data, mtx, dist, H, newcameramtx, pixel_to_step_ratio = load_calibration_data()
+    data, mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio, step_gap_h = (
+        load_calibration_data()
+    )
 
     # undistort point
     undistorted_pt = cv.undistortPoints(
@@ -73,13 +86,13 @@ def convert_distorted_coordinate_to_pixel_space(u, v):
     return undistorted_pt
 
 
-def undistort_img(img, filename=False, display=True):
+def undistort_img(img, filename=False, display=False):
     """
-    Display an undistorted image
+    Undistort an image using calibration data
     Args:
         img: ndarray (cv2 rendered image matrix)
         filename: str (if want to read from file instead)
-        display: bool (true if display of img wanted)
+        display: bool (false by default, set to true if display of img wanted)
 
     Returns:
         undistorted image matrix
@@ -89,7 +102,7 @@ def undistort_img(img, filename=False, display=True):
         img = cv.imread(filename)
 
     # load calibration data
-    data, mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio = (
+    data, mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio, step_gap_h = (
         load_calibration_data()
     )
 

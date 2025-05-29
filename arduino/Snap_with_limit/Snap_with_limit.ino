@@ -11,18 +11,18 @@
 #define limitSwitchR 8
 
 /* ----------- Motion parameters ----------- */
-#define steps1 1800
-#define steps2 2200
-#define TOTAL_DURATION 6000000UL
-#define SNAP_DELAY_MICROS  100
+#define steps1 1800 // This value represents the delta_h for moving steps. On 200 steps/rev setting, 1000 steps == 1 inch
+#define steps2 2200 // This value represents the delta_h for cutting step. On 200 steps/rev setting, 1000 steps == 1 inch
+#define TOTAL_DURATION 3000000UL // Half a stroke duration 1000000 == 1 sec 
+#define SNAP_DELAY_MICROS  100 // Time gap between SNAP sent and limit switches triggered
 
 /* ----------- Direction definitions ----------- */
-const bool DIR_TOWARD_HOME = HIGH;
+const bool DIR_TOWARD_HOME = HIGH; // For both linear actuators, HIGH is towards home
 const bool DIR_AWAY_HOME   = LOW;
 
 /* ----------- Timing variables ----------- */
-unsigned long interval1, interval2;
-unsigned long lastStepTime1 = 0, lastStepTime2 = 0, lastStepTime3 = 0;
+unsigned long interval1, interval2; // Interval based on steps and duration
+unsigned long lastStepTime1 = 0, lastStepTime2 = 0, lastStepTime3 = 0; 
 unsigned long pulseStart1 = 0, pulseStart2 = 0, pulseStart3 = 0;
 bool pulseHigh1 = false, pulseHigh2 = false, pulseHigh3 = false;
 
@@ -103,7 +103,7 @@ void loop() {
 
   // Motor 3 cutting motion runs in parallel
   if (snapSent) {
-    syncStep(stepPin3, now, 3000, cutStepCount, cutSteps,
+    syncStep(stepPin3, now, 1500, cutStepCount, cutSteps,
              lastStepTime3, pulseStart3, pulseHigh3);
     //Serial.println(cutSteps);
     //Serial.println(cutStepCount);
@@ -135,7 +135,7 @@ void loop() {
       if (orientation == 'L') {
         digitalWrite(dirPin3, HIGH);
         if (digitalRead(limitSwitchR) != LOW) {
-          simpleStep(stepPin3, now, 2000, lastStepTime3, pulseStart3, pulseHigh3);
+          simpleStep(stepPin3, now, 1500, lastStepTime3, pulseStart3, pulseHigh3);
         } else {
           finalizePulse(stepPin3, now, pulseStart3, pulseHigh3);
           motor3Homed = true;
@@ -144,7 +144,7 @@ void loop() {
       } else {
         digitalWrite(dirPin3, LOW);
         if (digitalRead(limitSwitchL) != LOW) {
-          simpleStep(stepPin3, now, 2000, lastStepTime3, pulseStart3, pulseHigh3);
+          simpleStep(stepPin3, now, 1500, lastStepTime3, pulseStart3, pulseHigh3);
         } else {
           finalizePulse(stepPin3, now, pulseStart3, pulseHigh3);
           motor3Homed = true;

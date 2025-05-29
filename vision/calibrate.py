@@ -272,7 +272,10 @@ def redo_bounding_box():
     # select bounding box
     # First selection
     r = cv.selectROI(
-        "Select Bounding Box for entire step", undistorted_frame, fromCenter=False, showCrosshair=True
+        "Select Bounding Box for entire step",
+        undistorted_frame,
+        fromCenter=False,
+        showCrosshair=True,
     )
     print("\nSelected ROI (x, y, width, height):", r)
     # Do NOT destroy windows here
@@ -293,9 +296,11 @@ def redo_bounding_box():
 
     # Second selection
     r2 = cv.selectROI(
-        "Select Bounding Box for step gap", new_img, fromCenter=False, showCrosshair=True
+        "Select Bounding Box for step gap",
+        new_img,
+        fromCenter=False,
+        showCrosshair=True,
     )
-
 
     cv.destroyAllWindows()  # Destroy windows only once after both selections
 
@@ -305,9 +310,8 @@ def redo_bounding_box():
     )
     print("Old step gap:", old_bounding_box)
 
-
     # pixel to length ratio from bounding box
-    step_real_width = 10.4  # inches
+    step_real_width = 11  # inches
     new_ratio = r[2] / step_real_width
 
     # now edit step gap height
@@ -324,7 +328,7 @@ def redo_bounding_box():
         newcameramtx=newcameramtx,
         bounding_box=new_bounding_box,
         pixel_to_step_ratio=new_ratio,
-        step_gap_h=new_step_gap_h
+        step_gap_h=new_step_gap_h,
     )
 
     # Verify the save
@@ -346,7 +350,7 @@ def generate_new_calibration_file():
         newcameramtx=0,
         bounding_box=0,
         pixel_to_step_ratio=0,
-        step_gap_h=0
+        step_gap_h=0,
     )
 
 
