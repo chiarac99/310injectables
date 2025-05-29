@@ -53,7 +53,7 @@ def segment(img):
     predictor = SamPredictor(sam)
 
     # Apply bounding box from calibration
-    _, _, _, _, _, bounding_box, _, step_gap_h, _, _  = undistort.load_calibration_data()
+    _, _, _, _, _, bounding_box, _, step_gap_h, _, _ = undistort.load_calibration_data()
 
     # Convert bounding box coordinates to integers and ensure they're within image bounds
     h, w = img.shape[:2]
@@ -77,6 +77,15 @@ def segment(img):
 
     # Clean up the mask
     mask = ~masks[0]  # Invert mask as sometimes background is detected as foreground
+
+    # Remove step gap rows from mask
+    h, w = mask.shape[:2]
+    y1 = int(step_gap_h)
+    y2 = h
+    cropped_mask = mask[y1:y2, :]
+    restored_mask = np.zeros_like(mask)
+    restored_mask[y1:y2, :] = cropped_mask
+    mask = restored_mask
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
     cleaned_mask = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_OPEN, kernel)
 
@@ -96,15 +105,6 @@ def segment(img):
     if syringe_area < 5000:  # Threshold may need tuning
         print("No syringe detected - area too small")
         return image_rgb, None, np.zeros_like(mask), None, None
-
-    # Remove step gap rows from mask
-    h, w = mask.shape[:2]
-    y1 = int(step_gap_h)
-    y2 = h
-    cropped_mask = mask[y1:y2, :]
-    restored_mask = np.zeros_like(mask)
-    restored_mask[y1:y2, :] = cropped_mask
-    mask = restored_mask
 
     # Analyze mask properties
     column_sums = np.sum(mask, axis=0)
@@ -136,7 +136,7 @@ def segment(img):
         orientation = "L"  # Needle pointing LEFT
         syringe_start_col = np.max(x_coords)
         syringe_end_col = np.min(x_coords)
-
+    print(f"Syringe start col: {syringe_start_col}, end col: {syringe_end_col}")
     return image_rgb, orientation, mask, syringe_start_col, syringe_end_col
 
 
@@ -264,41 +264,40 @@ def get_cut(
         )
     """
     # Load calibration data
-    _, _, _, _, _, _, pixels_to_length_ratio, _, BLADE_POS_LEFT, BLADE_POS_RIGHT = undistort.load_calibration_data()
+    _, _, _, _, _, _, pixel_to_length_ratio, _, BLADE_POS_LEFT, BLADE_POS_RIGHT = (
+        undistort.load_calibration_data()
+    )
+    BLADE_POS_LEFT = BLADE_POS_LEFT / pixel_to_length_ratio
+    BLADE_POS_RIGHT = BLADE_POS_RIGHT / pixel_to_length_ratio
 
     if orientation == "L":
         # Syringe pointed left - use right side of plunger window
-        where_to_cut = (plunger_end + errorL) / pixels_to_length_ratio
+        where_to_cut = (plunger_end + errorL) / pixel_to_length_ratio
 
         # If distance btw where to cut and flange is too long for distance btw two blades, discard syringe
-        if (
-            where_to_cut - needletip_position / pixels_to_length_ratio
-        ) > MAX_NEEDLE_LEN:
+        if (where_to_cut - needletip_position / pixel_to_length_ratio) > MAX_NEEDLE_LEN:
             print("Syringe too long!")
             where_to_move = 0
         elif where_to_cut < BLADE_POS_LEFT:
             where_to_move = 0
         else:
             where_to_move = (
-                BLADE_POS_LEFT - where_to_cut + flange_position / pixels_to_length_ratio
+                BLADE_POS_LEFT - where_to_cut + flange_position / pixel_to_length_ratio
             )
 
     elif orientation == "R":
         # Syringe pointed right - use left side of plunger window
-        where_to_cut = (plunger_end - errorR) / pixels_to_length_ratio
-        if (
-            needletip_position / pixels_to_length_ratio - where_to_cut
-        ) > MAX_NEEDLE_LEN:
+        where_to_cut = (plunger_end - errorR) / pixel_to_length_ratio
+        if (needletip_position / pixel_to_length_ratio - where_to_cut) > MAX_NEEDLE_LEN:
             print("Syringe too long!")
             where_to_move = MAX_PADDLE_POS
         elif where_to_cut > BLADE_POS_RIGHT:
             where_to_move = 0
         else:
             where_to_move = (
-                flange_position / pixels_to_length_ratio
-                - where_to_cut
-                + BLADE_POS_RIGHT
+                flange_position / pixel_to_length_ratio - where_to_cut + BLADE_POS_RIGHT
             )
+            print(f"Blade position right: {BLADE_POS_RIGHT}")
 
     elif orientation is None:
         # No syringe was detected
@@ -311,7 +310,7 @@ def get_cut(
 
 
 # Example usage
-"""
+
 # Open camera
 camera = cv2.VideoCapture(0)
 
@@ -347,28 +346,42 @@ if ret:
         mask_disp = ax.imshow(mask, alpha=0.5)
 
         # blades
-        _, _, _, _, _, _, pixels_to_length_ratio, _ = undistort.load_calibration_data()
+        (
+            _,
+            _,
+            _,
+            _,
+            _,
+            bounding_box,
+            pixel_to_length_ratio,
+            _,
+            BLADE_POS_LEFT,
+            BLADE_POS_RIGHT,
+        ) = undistort.load_calibration_data()
+        # Adjust blade positions for cropped image coordinates
+        x1 = int(bounding_box[0])
         blade_line_L = ax.axvline(
-            BLADE_POS_LEFT * pixels_to_length_ratio,
+            BLADE_POS_LEFT - x1,
             color="red",
             linestyle="--",
             label="Blade L",
         )
         blade_line_R = ax.axvline(
-            BLADE_POS_RIGHT * pixels_to_length_ratio,
+            BLADE_POS_RIGHT - x1,
             color="red",
             linestyle="--",
             label="Blade R",
         )
 
         where_to_move_line = ax.axvline(
-            where_to_move * pixels_to_length_ratio,
+            (where_to_move * pixel_to_length_ratio) + x1,
             color="green",
             linestyle="--",
             label="where_to_move",
         )
         where_to_cut_line = ax.axvline(
-            where_to_cut * pixels_to_length_ratio,
+            where_to_cut * pixel_to_length_ratio
+            - x1,  # Convert to pixels and adjust for cropped coordinates
             color="blue",
             linestyle="--",
             label="where_to_cut",
@@ -386,44 +399,44 @@ if ret:
         plt.legend()
         plt.show()
 
-        # # Visualize final results
-        # plt.figure(figsize=(15, 5))
-        #
-        # # Original with mask overlay
-        # plt.subplot(131)
-        # plt.imshow(image_rgb)
-        # plt.imshow(mask, alpha=0.3)
-        # plt.axvline(
-        #     syringe_start_col, color="yellow", linestyle="--", label="Syringe Start"
-        # )
-        # plt.axvline(
-        #     syringe_end_col, color="purple", linestyle="--", label="Syringe End"
-        # )
-        # plt.title(f"Segmentation Result\nOrientation: {orientation}")
-        # plt.axis("off")
-        # plt.legend()
-        #
-        # # Plunger detection
-        # plt.subplot(132)
-        # plt.imshow(rubber_mask, cmap="gray")
-        # plt.axvline(start_col, color="lime", linestyle="--", label="Plunger Start")
-        # plt.axvline(end_col, color="orange", linestyle="--", label="Plunger End")
-        # plt.title("Plunger Detection")
-        # plt.legend()
-        # plt.axis("off")
-        #
-        # # Combined view
-        # plt.subplot(133)
-        # plt.imshow(image_rgb)
-        # plt.imshow(rubber_mask, alpha=0.5, cmap="Reds")
-        # plt.title("Combined View")
-        # plt.axis("off")
-        #
-        # plt.tight_layout()
-        # plt.show()
+        # Visualize final results
+        plt.figure(figsize=(15, 5))
+
+        # Original with mask overlay
+        plt.subplot(131)
+        plt.imshow(image_rgb)
+        plt.imshow(mask, alpha=0.3)
+        plt.axvline(
+            syringe_start_col, color="yellow", linestyle="--", label="Syringe Start"
+        )
+        plt.axvline(
+            syringe_end_col, color="purple", linestyle="--", label="Syringe End"
+        )
+        plt.title(f"Segmentation Result\nOrientation: {orientation}")
+        plt.axis("off")
+        plt.legend()
+
+        # Plunger detection
+        plt.subplot(132)
+        plt.imshow(rubber_mask, cmap="gray")
+        plt.axvline(start_col, color="lime", linestyle="--", label="Plunger Start")
+        plt.axvline(end_col, color="orange", linestyle="--", label="Plunger End")
+        plt.title("Plunger Detection")
+        plt.legend()
+        plt.axis("off")
+
+        # Combined view
+        plt.subplot(133)
+        plt.imshow(image_rgb)
+        plt.imshow(rubber_mask, alpha=0.5, cmap="Reds")
+        plt.title("Combined View")
+        plt.axis("off")
+
+        plt.tight_layout()
+        plt.show()
 
         # Save the captured frame if needed
-        # cv2.imwrite("captured_frame.jpg", frame)
+        cv2.imwrite("captured_frame.jpg", frame)
 
         # Clean up
         camera.release()
@@ -434,4 +447,3 @@ if ret:
 
 else:
     print("Failed to capture image from camera")
-"""

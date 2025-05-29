@@ -24,7 +24,7 @@ def load_calibration_data():
     H = data["H"]
     newcameramtx = data["newcameramtx"]
     bounding_box = data["bounding_box"]
-    pixel_to_step_ratio = data["pixel_to_step_ratio"]
+    pixel_to_length_ratio = data["pixel_to_length_ratio"]
     step_gap_h = data["step_gap_h"]
     bladeL_pixels_x = data["bladeL_pixels_x"]
     bladeR_pixels_x = data["bladeR_pixels_x"]
@@ -36,10 +36,10 @@ def load_calibration_data():
         H,
         newcameramtx,
         bounding_box,
-        pixel_to_step_ratio,
+        pixel_to_length_ratio,
         step_gap_h,
         bladeL_pixels_x,
-        bladeR_pixels_x
+        bladeR_pixels_x,
     )
 
 
@@ -52,9 +52,18 @@ def convert_distorted_coordinate_to_real_space(u, v):
     """
 
     # load calibration data
-    data, mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio, step_gap_h, _, _ = (
-        load_calibration_data()
-    )
+    (
+        data,
+        mtx,
+        dist,
+        H,
+        newcameramtx,
+        bounding_box,
+        pixel_to_length_ratio,
+        step_gap_h,
+        _,
+        _,
+    ) = load_calibration_data()
 
     src_pt = np.array([[u, v]], dtype=np.float32)
 
@@ -78,9 +87,18 @@ def convert_distorted_coordinate_to_pixel_space(u, v):
     """
 
     # load calibration data
-    data, mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio, step_gap_h, _, _ = (
-        load_calibration_data()
-    )
+    (
+        data,
+        mtx,
+        dist,
+        H,
+        newcameramtx,
+        bounding_box,
+        pixel_to_length_ratio,
+        step_gap_h,
+        _,
+        _,
+    ) = load_calibration_data()
 
     # undistort point
     undistorted_pt = cv.undistortPoints(
@@ -106,9 +124,18 @@ def undistort_img(img, filename=False, display=False):
         img = cv.imread(filename)
 
     # load calibration data
-    data, mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio, step_gap_h, _, _ = (
-        load_calibration_data()
-    )
+    (
+        data,
+        mtx,
+        dist,
+        H,
+        newcameramtx,
+        bounding_box,
+        pixel_to_length_ratio,
+        step_gap_h,
+        _,
+        _,
+    ) = load_calibration_data()
 
     # undistort img
     undistorted_img = cv.undistort(img, mtx, dist, None, newcameramtx)

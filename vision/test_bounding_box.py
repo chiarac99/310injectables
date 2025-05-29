@@ -22,8 +22,9 @@ def test_bounding_box():
         return
 
     # Get current bounding box and convert to integers
-    data = np.load("calibration_data.npz")
-    bounding_box = data["bounding_box"]
+    _, _, _, _, _, bounding_box, _, _, bladeL_pixels_x, bladeR_pixels_x = (
+        load_calibration_data()
+    )
     print(f"\nRaw bounding box data: {bounding_box}")
 
     # Handle both (x,y,w,h) and (x1,y1,x2,y2) formats
@@ -40,6 +41,8 @@ def test_bounding_box():
     print(f"x2, y2: ({x2}, {y2})")
     print(f"Width: {x2 - x1}, Height: {y2 - y1}")
     print(f"Original image shape: {frame.shape}\n")
+    print(f"Blade L position: {bladeL_pixels_x}")
+    print(f"Blade R position: {bladeR_pixels_x}")
 
     # Ensure coordinates are within image bounds
     h, w = frame.shape[:2]
@@ -48,11 +51,23 @@ def test_bounding_box():
     x2 = max(0, min(x2, w))
     y2 = max(0, min(y2, h))
 
+    # Convert blade positions to integers
+    bladeL_x = int(bladeL_pixels_x)
+    bladeR_x = int(bladeR_pixels_x)
+
     # Create a copy of the frame to draw on
     frame_with_box = frame.copy()
 
     # Draw the bounding box on the original image
     cv2.rectangle(frame_with_box, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+    # Draw blade positions
+    cv2.line(
+        frame_with_box, (bladeL_x, y1), (bladeL_x, y2), (0, 0, 255), 2
+    )  # Red line for left blade
+    cv2.line(
+        frame_with_box, (bladeR_x, y1), (bladeR_x, y2), (255, 0, 0), 2
+    )  # Blue line for right blade
 
     try:
         # Crop the image using the bounding box
@@ -69,7 +84,9 @@ def test_bounding_box():
         # Original image with bounding box
         plt.subplot(121)
         plt.imshow(frame_with_box_rgb)
-        plt.title(f"Original with Bounding Box\nBox coords: ({x1}, {y1}, {x2}, {y2})")
+        plt.title(
+            f"Original with Bounding Box and Blades\nBox coords: ({x1}, {y1}, {x2}, {y2})"
+        )
         plt.axis("on")  # Keep axis on to see coordinates
 
         # Cropped image

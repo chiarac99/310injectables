@@ -130,7 +130,7 @@ def calibrate():
     bounding_box = (454, 458, 454 + 1234, 458 + 133)
 
     # save initial guess at pixel to step ratio
-    pixel_to_step_ratio = 112.4
+    pixel_to_length_ratio = 112.4
 
     # initialise step_gap_h
     step_gap_h = 0
@@ -145,10 +145,10 @@ def calibrate():
         H=H,
         newcameramtx=newcameramtx,
         bounding_box=bounding_box,
-        pixel_to_step_ratio=pixel_to_step_ratio,
+        pixel_to_length_ratio=pixel_to_length_ratio,
         step_gap_h=step_gap_h,
         bladeL_pixels_x=bladeL_pixels_x,
-        bladeR_pixels_x=bladeR_pixels_x
+        bladeR_pixels_x=bladeR_pixels_x,
     )
 
     # -------------------
@@ -247,10 +247,10 @@ def load_calibration_data():
     H = data["H"]
     newcameramtx = data["newcameramtx"]
     bounding_box = data["bounding_box"]
-    pixel_to_step_ratio = data["pixel_to_step_ratio"]
+    pixel_to_length_ratio = data["pixel_to_length_ratio"]
     step_gap_h = data["step_gap_h"]
 
-    return mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio, step_gap_h
+    return mtx, dist, H, newcameramtx, bounding_box, pixel_to_length_ratio, step_gap_h
 
 
 def redo_bounding_box():
@@ -307,49 +307,22 @@ def redo_bounding_box():
         showCrosshair=True,
     )
 
-    # third selection for blade positions
-    # List to store the clicked points
-    points = []
+    # Calculate blade positions based on bounding box width
+    box_width = r[2]  # horizontal width of bounding box
+    bladeL_pixels_x = (
+        int(box_width * (3.5 / 11)) + r[0]
+    )  # Add r[0] to offset from left edge
+    bladeR_pixels_x = (
+        int(box_width * (7.5 / 11)) + r[0]
+    )  # Add r[0] to offset from left edge
 
-    # Mouse callback function to record the clicks
-    def click_event(event, x, y, flags, param):
-        if event == cv.EVENT_LBUTTONDOWN and len(points) < 2:
-            points.append((x, y))
-            print(f"Point {len(points)}: ({x}, {y})")
-            # Draw a small circle where the user clicked
-            cv.circle(undistorted_frame, (x, y), 5, (0, 0, 255), -1)
-            cv.imshow("Click in two points where the blades are located", undistorted_frame)
-
-    cv.imshow("Click in two points where the blades are located", undistorted_frame)
-    cv.setMouseCallback("Click in two points where the blades are located", click_event)
-
-    print("Click two points on the image where the two blades are located...")
-    print("Press 'c' to exit")
-
-    # Wait until two points are clicked
-    while True:
-        key = cv.waitKey(1) & 0xFF
-        if len(points) == 2:
-            print("Two points selected.")
-            break
-        if key == 'c':
-            break
-
-    cv.destroyAllWindows()
-
-    # Access the coordinates
-    if len(points) == 2:
-        blade_xs = [points[0][0], points[1][0]]
-        bladeL_pixels_x = min(blade_xs)
-        bladeR_pixels_x = max(blade_xs)
-
-        print("BladeL x:", bladeL_pixels_x)
-        print("BladeR x:", bladeR_pixels_x)
+    print("BladeL x:", bladeL_pixels_x)
+    print("BladeR x:", bladeR_pixels_x)
 
     cv.destroyAllWindows()  # Destroy windows only once after both selections
 
     # update bounding box
-    mtx, dist, H, newcameramtx, old_bounding_box, pixel_to_step_ratio, step_gap_h = (
+    mtx, dist, H, newcameramtx, old_bounding_box, pixel_to_length_ratio, step_gap_h = (
         load_calibration_data()
     )
     print("Old step gap:", old_bounding_box)
@@ -371,10 +344,10 @@ def redo_bounding_box():
         H=H,
         newcameramtx=newcameramtx,
         bounding_box=new_bounding_box,
-        pixel_to_step_ratio=new_ratio,
+        pixel_to_length_ratio=new_ratio,
         step_gap_h=new_step_gap_h,
         bladeL_pixels_x=bladeL_pixels_x,
-        bladeR_pixels_x=bladeR_pixels_x
+        bladeR_pixels_x=bladeR_pixels_x,
     )
 
     # Verify the save
@@ -395,10 +368,10 @@ def generate_new_calibration_file():
         H=0,
         newcameramtx=0,
         bounding_box=0,
-        pixel_to_step_ratio=0,
+        pixel_to_length_ratio=0,
         step_gap_h=0,
         bladeL_pixels_x=0,
-        bladeR_pixels_x=0
+        bladeR_pixels_x=0,
     )
 
 

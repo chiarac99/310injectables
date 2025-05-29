@@ -13,7 +13,7 @@
 /* ----------- Motion parameters ----------- */
 #define steps1 1800 // This value represents the delta_h for moving steps. On 200 steps/rev setting, 1000 steps == 1 inch
 #define steps2 2200 // This value represents the delta_h for cutting step. On 200 steps/rev setting, 1000 steps == 1 inch
-#define TOTAL_DURATION 3000000UL // Half a stroke duration 1000000 == 1 sec 
+#define TOTAL_DURATION 2200000UL // Half a stroke duration 1000000 == 1 sec 
 #define SNAP_DELAY_MICROS  100 // Time gap between SNAP sent and limit switches triggered
 
 /* ----------- Direction definitions ----------- */
