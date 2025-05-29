@@ -24,8 +24,6 @@ SAM_CHECKPOINT = "/Users/venkatasaisarangrandhe/sam_weights/sam_vit_b_01ec64.pth
 MODEL_TYPE = "vit_b"
 
 # Hardware Constants (in inches)
-BLADE_POS_LEFT = 3.5  # 3.625
-BLADE_POS_RIGHT = 7.5  # 7.625
 STEPS_TO_LENGTH_RATIO = 1355 / 10  # 135.5  # 200 steps/rev, 0.47" diameter pulley
 MAX_PADDLE_POS = (
     11  # inches / TODO: update this to actual length when paddle extrusion is replaced
@@ -55,7 +53,7 @@ def segment(img):
     predictor = SamPredictor(sam)
 
     # Apply bounding box from calibration
-    _, _, _, _, _, bounding_box, _, step_gap_h = undistort.load_calibration_data()
+    _, _, _, _, _, bounding_box, _, step_gap_h, _, _  = undistort.load_calibration_data()
 
     # Convert bounding box coordinates to integers and ensure they're within image bounds
     h, w = img.shape[:2]
@@ -266,7 +264,7 @@ def get_cut(
         )
     """
     # Load calibration data
-    _, _, _, _, _, _, pixels_to_length_ratio, _ = undistort.load_calibration_data()
+    _, _, _, _, _, _, pixels_to_length_ratio, _, BLADE_POS_LEFT, BLADE_POS_RIGHT = undistort.load_calibration_data()
 
     if orientation == "L":
         # Syringe pointed left - use right side of plunger window

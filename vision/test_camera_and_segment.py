@@ -28,7 +28,7 @@ def capture_and_segment():
 
     try:
         # Load calibration data
-        mtx, dist, _, _, _, _, _ = load_calibration_data()
+        mtx, dist, _, _, _, _, _, _, _, _ = load_calibration_data()
 
         while True:
             # Capture frame

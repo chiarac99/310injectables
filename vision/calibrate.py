@@ -134,6 +134,8 @@ def calibrate():
 
     # initialise step_gap_h
     step_gap_h = 0
+    bladeL_pixels_x = 0
+    bladeR_pixels_x = 0
 
     # save calibration data to file
     np.savez(
@@ -145,6 +147,8 @@ def calibrate():
         bounding_box=bounding_box,
         pixel_to_step_ratio=pixel_to_step_ratio,
         step_gap_h=step_gap_h,
+        bladeL_pixels_x=bladeL_pixels_x,
+        bladeR_pixels_x=bladeR_pixels_x
     )
 
     # -------------------
@@ -369,6 +373,8 @@ def redo_bounding_box():
         bounding_box=new_bounding_box,
         pixel_to_step_ratio=new_ratio,
         step_gap_h=new_step_gap_h,
+        bladeL_pixels_x=bladeL_pixels_x,
+        bladeR_pixels_x=bladeR_pixels_x
     )
 
     # Verify the save
@@ -391,6 +397,8 @@ def generate_new_calibration_file():
         bounding_box=0,
         pixel_to_step_ratio=0,
         step_gap_h=0,
+        bladeL_pixels_x=0,
+        bladeR_pixels_x=0
     )
 
 

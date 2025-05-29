@@ -26,6 +26,8 @@ def load_calibration_data():
     bounding_box = data["bounding_box"]
     pixel_to_step_ratio = data["pixel_to_step_ratio"]
     step_gap_h = data["step_gap_h"]
+    bladeL_pixels_x = data["bladeL_pixels_x"]
+    bladeR_pixels_x = data["bladeR_pixels_x"]
 
     return (
         data,
@@ -36,6 +38,8 @@ def load_calibration_data():
         bounding_box,
         pixel_to_step_ratio,
         step_gap_h,
+        bladeL_pixels_x,
+        bladeR_pixels_x
     )
 
 
@@ -48,7 +52,7 @@ def convert_distorted_coordinate_to_real_space(u, v):
     """
 
     # load calibration data
-    data, mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio, step_gap_h = (
+    data, mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio, step_gap_h, _, _ = (
         load_calibration_data()
     )
 
@@ -74,7 +78,7 @@ def convert_distorted_coordinate_to_pixel_space(u, v):
     """
 
     # load calibration data
-    data, mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio, step_gap_h = (
+    data, mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio, step_gap_h, _, _ = (
         load_calibration_data()
     )
 
@@ -102,7 +106,7 @@ def undistort_img(img, filename=False, display=False):
         img = cv.imread(filename)
 
     # load calibration data
-    data, mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio, step_gap_h = (
+    data, mtx, dist, H, newcameramtx, bounding_box, pixel_to_step_ratio, step_gap_h, _, _ = (
         load_calibration_data()
     )
 
