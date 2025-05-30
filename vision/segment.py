@@ -310,7 +310,7 @@ def get_cut(
 
 
 # Example usage
-
+"""
 # Open camera
 camera = cv2.VideoCapture(0)
 
@@ -447,3 +447,4 @@ if ret:
 
 else:
     print("Failed to capture image from camera")
+"""

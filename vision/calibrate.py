@@ -309,12 +309,8 @@ def redo_bounding_box():
 
     # Calculate blade positions based on bounding box width
     box_width = r[2]  # horizontal width of bounding box
-    bladeL_pixels_x = (
-        int(box_width * (3.5 / 11)) + r[0]
-    )  # Add r[0] to offset from left edge
-    bladeR_pixels_x = (
-        int(box_width * (7.5 / 11)) + r[0]
-    )  # Add r[0] to offset from left edge
+    bladeL_pixels_x = int(box_width * (3.5 / 11))
+    bladeR_pixels_x = int(box_width * (7.5 / 11))
 
     print("BladeL x:", bladeL_pixels_x)
     print("BladeR x:", bladeR_pixels_x)
