@@ -5,7 +5,7 @@ import serial
 import time
 
 # serial
-arduino_port = "/dev/cu.usbmodem14101"
+arduino_port = "/dev/cu.usbmodem1201"
 baud_rate = 115200
 ser = serial.Serial(arduino_port, baud_rate, timeout=1)
 time.sleep(2)  # wait for Arduino to reset

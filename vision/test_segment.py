@@ -1,5 +1,5 @@
 """
-Segment.py: Image Segmentation and Plunger Detection Module
+Copy of Segment.py: Image Segmentation and Plunger Detection Module
 
 This module provides functionality for:
 1. Segmenting syringe images using SAM (Segment Anything Model)
