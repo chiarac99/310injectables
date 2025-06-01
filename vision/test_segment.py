@@ -1,5 +1,5 @@
 """
-Copy of Segment.py: Image Segmentation and Plunger Detection Module
+Segment.py: Image Segmentation and Plunger Detection Module
 
 This module provides functionality for:
 1. Segmenting syringe images using SAM (Segment Anything Model)
@@ -161,24 +161,46 @@ def detect_plunger(img, mask):
     # Apply mask to grayscale image
     syringe_region = np.where(mask, gray, 255)  # Set non-syringe to white (255)
 
+    # # Visualize
+    # plt.imshow(syringe_region, cmap='gray')
+    # plt.title("Syringe Region Only (Grayscale)")
+    # plt.axis('off')
+    # plt.show()
+    #
+    # # Step: Find darkest areas (black rubber)
+    # min_val = np.min(syringe_region)
+    # black_threshold = min_val + 10  # Allow a small margin
+    #
+    # # Create mask of black rubber
+    # rubber_mask = syringe_region < black_threshold
+    #
+    # # Visualize result
+    # plt.imshow(rubber_mask, cmap='gray')
+    # plt.title("Detected Black Rubber in Syringe")
+    # plt.axis('off')
+    # plt.show()
     # Step 1: Contrast Stretching
-    # syringe_region = cv2.equalizeHist(syringe_region.astype(np.uint8))
+    syringe_enhanced = (
+        syringe_region  # cv2.equalizeHist(syringe_region.astype(np.uint8))
+    )
 
     kernel = np.ones((3, 3), np.uint8)
     eroded = cv2.erode(syringe_region, kernel, iterations=1)
     blurred = cv2.GaussianBlur(eroded, (3, 3), 0)
 
+    # plt.imshow(blurred, cmap='gray')
+    # plt.title("Syringe Region Only (Grayscale)")
+    # plt.axis('off')
+    # plt.show()
+
     # Threshold to find dark regions (plunger)
     _, rubber_mask = cv2.threshold(blurred, 50, 255, cv2.THRESH_BINARY_INV)
     rubber_mask = cv2.morphologyEx(rubber_mask, cv2.MORPH_OPEN, kernel)
 
-    # Clean up the mask
-    kernel = np.ones((3, 3), np.uint8)
-    rubber_mask = cv2.morphologyEx(rubber_mask, cv2.MORPH_OPEN, kernel)
-    rubber_mask = cv2.morphologyEx(rubber_mask, cv2.MORPH_CLOSE, kernel)
-
-    # Ensure the mask only includes regions within the original syringe mask
-    rubber_mask = cv2.bitwise_and(rubber_mask, mask.astype(np.uint8) * 255)
+    # plt.imshow(rubber_mask, cmap='gray')
+    # plt.title("Syringe Region Only (Grayscale)")
+    # plt.axis('off')
+    # plt.show()
 
     # Find optimal plunger window using sliding window
     height, width = rubber_mask.shape
@@ -339,27 +361,27 @@ if ret:
         # Adjust blade positions for cropped image coordinates
         x1 = int(bounding_box[0])
         blade_line_L = ax.axvline(
-            BLADE_POS_LEFT,
+            BLADE_POS_LEFT - x1,
             color="red",
             linestyle="--",
             label="Blade L",
         )
         blade_line_R = ax.axvline(
-            BLADE_POS_RIGHT,
+            BLADE_POS_RIGHT - x1,
             color="red",
             linestyle="--",
             label="Blade R",
         )
 
         where_to_move_line = ax.axvline(
-            (where_to_move * pixel_to_length_ratio),
+            (where_to_move * pixel_to_length_ratio) + x1,
             color="green",
             linestyle="--",
             label="where_to_move",
         )
         where_to_cut_line = ax.axvline(
-            where_to_cut
-            * pixel_to_length_ratio,  # Convert to pixels and adjust for cropped coordinates
+            where_to_cut * pixel_to_length_ratio
+            - x1,  # Convert to pixels and adjust for cropped coordinates
             color="blue",
             linestyle="--",
             label="where_to_cut",

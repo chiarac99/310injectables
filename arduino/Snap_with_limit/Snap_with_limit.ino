@@ -11,9 +11,9 @@
 #define limitSwitchR 8
 
 /* ----------- Motion parameters ----------- */
-#define steps1 1800 // This value represents the delta_h for moving steps. On 200 steps/rev setting, 1000 steps == 1 inch
+#define steps1 1700 // This value represents the delta_h for moving steps. On 200 steps/rev setting, 1000 steps == 1 inch
 #define steps2 2200 // This value represents the delta_h for cutting step. On 200 steps/rev setting, 1000 steps == 1 inch
-#define TOTAL_DURATION 6000000UL // Half a stroke duration 1000000 == 1 sec 
+#define TOTAL_DURATION 2300000UL // Half a stroke duration 1000000 == 1 sec 
 #define SNAP_DELAY_MICROS  100 // Time gap between SNAP sent and limit switches triggered
 
 /* ----------- Direction definitions ----------- */
@@ -105,7 +105,7 @@ void loop() {
 
   // Motor 3 cutting motion runs in parallel
   if (snapSent) {
-    syncStep(stepPin3, now, 1500, cutStepCount, cutSteps,
+    syncStep(stepPin3, now, 1000, cutStepCount, cutSteps,
              lastStepTime3, pulseStart3, pulseHigh3);
     //Serial.println(cutSteps);
     //Serial.println(cutStepCount);

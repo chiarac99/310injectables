@@ -5,7 +5,7 @@ import serial
 import time
 
 # serial
-arduino_port = "/dev/cu.usbmodem1201"
+arduino_port = "/dev/cu.usbmodem14101"
 baud_rate = 115200
 ser = serial.Serial(arduino_port, baud_rate, timeout=1)
 time.sleep(2)  # wait for Arduino to reset
@@ -52,8 +52,8 @@ try:
         _, plunger_start_col, plunger_end_col = segment.detect_plunger(image_rgb, mask)
 
         # calculate cut
-        errorR = 60
-        errorL = 30
+        errorR = 0.8
+        errorL = 0.6
         cut_steps, where_to_move, where_to_cut = segment.get_cut(
             syringe_start_col,
             syringe_end_col,

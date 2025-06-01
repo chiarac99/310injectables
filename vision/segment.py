@@ -24,11 +24,14 @@ SAM_CHECKPOINT = "/Users/venkatasaisarangrandhe/sam_weights/sam_vit_b_01ec64.pth
 MODEL_TYPE = "vit_b"
 
 # Hardware Constants (in inches)
-STEPS_TO_LENGTH_RATIO = 1355 / 10  # 135.5  # 200 steps/rev, 0.47" diameter pulley
+PADDLE_THICKNESS = 0.1
+STEPS_TO_LENGTH_RATIO = 1399 / 10.9  # 135.5  # 200 steps/rev, 0.47" diameter pulley
 MAX_PADDLE_POS = (
-    11  # inches / TODO: update this to actual length when paddle extrusion is replaced
+    11
+    - PADDLE_THICKNESS  # inches / TODO: update this to actual length when paddle extrusion is replaced
 )
 MAX_NEEDLE_LEN = 3.4  # inches / maximum length of needle part we can process, this length is equal to the distance between a blade and the side sheet (i.e. side channel width)
+# inches
 
 
 def segment(img):
@@ -161,24 +164,46 @@ def detect_plunger(img, mask):
     # Apply mask to grayscale image
     syringe_region = np.where(mask, gray, 255)  # Set non-syringe to white (255)
 
+    # Visualize
+    # plt.imshow(syringe_region, cmap="gray")
+    # plt.title("Syringe Region Only (Grayscale)")
+    # plt.axis("off")
+    # plt.show()
+    #
+    # # Step: Find darkest areas (black rubber)
+    # min_val = np.min(syringe_region)
+    # black_threshold = min_val + 10  # Allow a small margin
+    #
+    # # Create mask of black rubber
+    # rubber_mask = syringe_region < black_threshold
+    #
+    # # Visualize result
+    # plt.imshow(rubber_mask, cmap='gray')
+    # plt.title("Detected Black Rubber in Syringe")
+    # plt.axis('off')
+    # plt.show()
     # Step 1: Contrast Stretching
-    # syringe_region = cv2.equalizeHist(syringe_region.astype(np.uint8))
+    syringe_enhanced = (
+        syringe_region  # cv2.equalizeHist(syringe_region.astype(np.uint8))
+    )
 
     kernel = np.ones((3, 3), np.uint8)
     eroded = cv2.erode(syringe_region, kernel, iterations=1)
     blurred = cv2.GaussianBlur(eroded, (3, 3), 0)
 
+    # plt.imshow(blurred, cmap='gray')
+    # plt.title("Syringe Region Only (Grayscale)")
+    # plt.axis('off')
+    # plt.show()
+
     # Threshold to find dark regions (plunger)
-    _, rubber_mask = cv2.threshold(blurred, 50, 255, cv2.THRESH_BINARY_INV)
+    _, rubber_mask = cv2.threshold(blurred, 100, 255, cv2.THRESH_BINARY_INV)
     rubber_mask = cv2.morphologyEx(rubber_mask, cv2.MORPH_OPEN, kernel)
 
-    # Clean up the mask
-    kernel = np.ones((3, 3), np.uint8)
-    rubber_mask = cv2.morphologyEx(rubber_mask, cv2.MORPH_OPEN, kernel)
-    rubber_mask = cv2.morphologyEx(rubber_mask, cv2.MORPH_CLOSE, kernel)
-
-    # Ensure the mask only includes regions within the original syringe mask
-    rubber_mask = cv2.bitwise_and(rubber_mask, mask.astype(np.uint8) * 255)
+    # plt.imshow(rubber_mask, cmap="gray")
+    # plt.title("Syringe Region Only (Grayscale)")
+    # plt.axis("off")
+    # plt.show()
 
     # Find optimal plunger window using sliding window
     height, width = rubber_mask.shape
@@ -210,6 +235,9 @@ def detect_plunger(img, mask):
 
     start_col = best_start
     end_col = best_start + window_size
+
+    # Visualize plunger window on rubber mask
+    print(f"Plunger window: {start_col}-{end_col}")
 
     return rubber_mask, start_col, end_col
 
@@ -250,22 +278,22 @@ def get_cut(
 
     if orientation == "L":
         # Syringe pointed left - use right side of plunger window
-        where_to_cut = (plunger_end + errorL) / pixel_to_length_ratio
+        where_to_cut = (plunger_end) / pixel_to_length_ratio + errorL
 
         # If distance btw where to cut and flange is too long for distance btw two blades, discard syringe
         if (where_to_cut - needletip_position / pixel_to_length_ratio) > MAX_NEEDLE_LEN:
             print("Syringe too long!")
-            where_to_move = 0
+            where_to_move = MAX_PADDLE_POS
         elif where_to_cut < BLADE_POS_LEFT:
             where_to_move = 0
         else:
-            where_to_move = (
+            where_to_move = MAX_PADDLE_POS - (
                 BLADE_POS_LEFT - where_to_cut + flange_position / pixel_to_length_ratio
             )
 
     elif orientation == "R":
         # Syringe pointed right - use left side of plunger window
-        where_to_cut = (plunger_end - errorR) / pixel_to_length_ratio
+        where_to_cut = (plunger_end) / pixel_to_length_ratio - errorR
         if (needletip_position / pixel_to_length_ratio - where_to_cut) > MAX_NEEDLE_LEN:
             print("Syringe too long!")
             where_to_move = MAX_PADDLE_POS
@@ -273,7 +301,10 @@ def get_cut(
             where_to_move = 0
         else:
             where_to_move = (
-                flange_position / pixel_to_length_ratio - where_to_cut + BLADE_POS_RIGHT
+                flange_position / pixel_to_length_ratio
+                - where_to_cut
+                + BLADE_POS_RIGHT
+                - PADDLE_THICKNESS
             )
             print(f"Blade position right: {BLADE_POS_RIGHT}")
 
@@ -288,7 +319,7 @@ def get_cut(
 
 
 # Example usage
-
+"""
 # Open camera
 camera = cv2.VideoCapture(0)
 
@@ -425,3 +456,4 @@ if ret:
 
 else:
     print("Failed to capture image from camera")
+"""
