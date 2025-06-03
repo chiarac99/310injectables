@@ -177,8 +177,8 @@ def run_main_test_logic(arduino_port):
             )
 
             # calculate cut
-            errorR = 0.8
-            errorL = 0.6
+            errorR = 0.9
+            errorL = 0.8
             cut_steps, where_to_move, where_to_cut = segment.get_cut(
                 syringe_start_col,
                 syringe_end_col,

@@ -25,12 +25,9 @@ MODEL_TYPE = "vit_b"
 
 # Hardware Constants (in inches)
 PADDLE_THICKNESS = 0.1
-STEPS_TO_LENGTH_RATIO = 1399 / 10.9  # 135.5  # 200 steps/rev, 0.47" diameter pulley
-MAX_PADDLE_POS = (
-    11
-    - PADDLE_THICKNESS  # inches / TODO: update this to actual length when paddle extrusion is replaced
-)
-MAX_NEEDLE_LEN = 3.4  # inches / maximum length of needle part we can process, this length is equal to the distance between a blade and the side sheet (i.e. side channel width)
+STEPS_TO_LENGTH_RATIO = 1458 / 11.48  # 135.5  # 200 steps/rev, 0.47" diameter pulley
+MAX_PADDLE_POS = 11.48  # inches / TODO: update this to actual length when paddle extrusion is replaced
+MAX_NEEDLE_LEN = 3.6  # inches / maximum length of needle part we can process, this length is equal to the distance between a blade and the side sheet (i.e. side channel width)
 # inches
 
 
@@ -288,7 +285,10 @@ def get_cut(
             where_to_move = 0
         else:
             where_to_move = MAX_PADDLE_POS - (
-                BLADE_POS_LEFT - where_to_cut + flange_position / pixel_to_length_ratio
+                BLADE_POS_LEFT
+                - where_to_cut
+                + flange_position / pixel_to_length_ratio
+                + 0.2636
             )
 
     elif orientation == "R":
@@ -305,6 +305,7 @@ def get_cut(
                 - where_to_cut
                 + BLADE_POS_RIGHT
                 - PADDLE_THICKNESS
+                + 0.2636
             )
             print(f"Blade position right: {BLADE_POS_RIGHT}")
 

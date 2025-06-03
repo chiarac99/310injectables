@@ -309,8 +309,12 @@ def redo_bounding_box():
 
     # Calculate blade positions based on bounding box width
     box_width = r[2]  # horizontal width of bounding box
-    bladeL_pixels_x = int(box_width * (3.5 / 11))
-    bladeR_pixels_x = int(box_width * (7.5 / 11))
+    bladeL_pixels_x = int(
+        box_width * (3.6 / 11)
+    )  # 1458 is no.of steps from left to right
+    bladeR_pixels_x = int(
+        box_width * (7.5 / 11)
+    )  # 1458 is no.of steps from left to right
 
     print("BladeL x:", bladeL_pixels_x)
     print("BladeR x:", bladeR_pixels_x)
