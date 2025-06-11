@@ -1,527 +1,323 @@
-/*
-main.ino
+/* ----------- Pin assignment ----------- */
+#define stepPin1 13
+#define dirPin1  12
+#define stepPin2 10
+#define dirPin2  9
+#define stepPin3 6
+#define dirPin3  7
+#define limitSwitch1 3
+#define limitSwitch2 4
+#define limitSwitchL 11
+#define limitSwitchR 8
+#define dcMotorPin 2
 
-Main Arduino file for 310 Injectables
+/* ----------- Motion parameters ----------- */
+#define steps1 1700
+#define steps2 2200
+#define TOTAL_DURATION 2300000UL
+#define SNAP_DELAY_MICROS  100
 
-This file should handle all comms with electronics. These include:
-- limit switches for linear actuator positioning
-- Nema 17 motors for syringe alignment subsystem and two linear actuators
+/* ----------- Direction definitions ----------- */
+const bool DIR_TOWARD_HOME = HIGH;
+const bool DIR_AWAY_HOME   = LOW;
 
-*/
+/* ----------- Timing variables ----------- */
+unsigned long interval1, interval2;
+unsigned long lastStepTime1 = 0, lastStepTime2 = 0, lastStepTime3 = 0;
+unsigned long pulseStart1 = 0, pulseStart2 = 0, pulseStart3 = 0;
+bool pulseHigh1 = false, pulseHigh2 = false, pulseHigh3 = false;
+unsigned long returnStrokeDoneTime = 0;
+unsigned long motor3HomedTime = 0;
 
-#define DIR_PIN_ALIGN 12 // linear actuator that moves aligning steps up and down
-#define DIR_PIN_CUT 9 // linear actuator that moves cutting step up and down
-#define STEP_PIN_ALIGN 11 
-#define STEP_PIN_CUT 8
 
-#define LIMIT_SWITCH_ALIGN 4 // limit switch for positioning linear actuator 1
-#define LIMIT_SWITCH_CUT 2 // limit switch for positioning linear actuator 2
+/* ----------- New for motor 3 homing delay ----------- */
+unsigned long motor3HomingStartTime = 0;
+bool readyToHomeMotor3 = false;
 
-/*
-LINEAR ACTUATOR POSITIONING
-- linear actuator position is in integer number of steps from the zero position
-- the zero position is the position of the limit switch at the top its travel
-- it should hit this point once every cycle (when going up)
-*/
-#define microStepsPerRotation 200 // 5mm pitch of lead screw
-const int StepsPerAlignCycle = int(microStepsPerRotation*5.08); // number of steps to do at least 1" of travel (from zero position) - 5.08 rotations
-const int StepsPerCutCycle = int(microStepsPerRotation*10.16); // number of steps to do at least 2" of travel - 10.16 rotations
+/* ----------- Counters & flags ----------- */
+int currentStep1 = 0, currentStep2 = 0;
+bool homed1 = false, homed2 = false, systemHomed = false;
+bool forwardStroke = true;
+bool snapSent = false;
+bool motor3Homed = false;
 
-#define actuatorUpDir true
-#define actuatorDownDir false
-bool direction = actuatorUpDir; // start direction upwards
-uint8_t alignActivated = 1; // is the actuator active for this loop
-uint8_t cutActivated = 1;
-#define ActuatorStepDelay 500  // delay btw HIGH and LOW signal for align and cutting stepper motors
-
-int alignStepCount = 0; // step count record
+/* ----------- Serial control variables ----------- */
+char orientation = 'L';
+int cutSteps = 0;
 int cutStepCount = 0;
+bool newCommandAvailable = false;
 
-// REPOSITION PADDLE
-// variables received from python for repositioning
-#define LIMIT_SWITCH_PADDLE 13
-#define DIR_PIN_PADDLE 6
-#define STEP_PIN_PADDLE 7
-#define HOMING_INTERVAL_PADDLE 2500 // microseconds/step
-#define FAST_INTERVAL_PADDLE 800 //1250 // microseconds/step
-char syringeDir;  // dir of syringe (determines where to send paddle before repositioning)
-int syringeCut;  // position in pixels of where to cut
-int paddlePos = 0;  // saves current position of paddle
-unsigned long lastStepTimePaddle = 0;
-unsigned long pulseStartPaddle = 0;
-bool pulseHighPaddle = false;
-int currentStepPaddle = 0;
+/* ----------- Control Flags ----------- */
+bool isPaused = false;
+bool isReady = false;
 
-#define PADDLE_TO_HOME 0
-#define PADDLE_AWAY_FROM_HOME 1
-#define PADDLE_OFF 2
-int directionPaddle = PADDLE_OFF; //PADDLE_TO_HOME;  // start in limitswitch dir
-int lastDirectionPaddle = PADDLE_OFF;
-int intervalPaddle = HOMING_INTERVAL_PADDLE;
-int targetPaddlePos = 0;
-uint8_t paddleTargetReached = 1; // bool for state machine to know when a target has been reached
-
-#define PADDLE_HOME_POS 0
-#define PADDLE_AWAY_FROM_HOME_POS 1355 // TODO: 10" for now (0.00738"/step), need to change for 11.25" when paddle is set up properly for short extrusion
-
-// states
-typedef enum {
-  INITIALISING_CAMERA,
-  INITIALISING_BLADE,
-  HOMING_PADDLE,
-  MOVING_UP, // no need to home actuators because we will always be moving upwards first; we check if we reach the limit switch at the top of EVERY cycle
-  MOVING_DOWN,
-  ASK_FOR_IMG,
-  WAITING_FOR_IMG_OUTPUT,
-  PRE_POSITION_PADDLE,
-  TESTING_REPOSITIONING
-} systemState_t;
-systemState_t systemState = ASK_FOR_IMG;
+/* ----------- Debounce timing trackers ----------- */
+unsigned long debounceStart1 = 0;
+unsigned long debounceStart2 = 0;
+unsigned long debounceStartL = 0;
+unsigned long debounceStartR = 0;
 
 void setup() {
   Serial.begin(115200);
-  while (Serial.available()) Serial.read();  // Clear buffer
+  pinMode(dcMotorPin, OUTPUT);
+  while (!isReady) {
+    if (Serial.available()) {
+      String command = Serial.readStringUntil('\n');
+      command.trim();
+      if (command == "READY") {
+        isReady = true;
+        Serial.println(">> Arduino READY");
+        digitalWrite(dcMotorPin, HIGH);
+      }
+    }
+  }
 
-  // linear actuators
-  pinMode(DIR_PIN_ALIGN, OUTPUT);
-  pinMode(DIR_PIN_CUT, OUTPUT);
-  pinMode(STEP_PIN_ALIGN, OUTPUT);
-  pinMode(STEP_PIN_CUT, OUTPUT);
+  pinMode(stepPin1, OUTPUT); pinMode(dirPin1, OUTPUT);
+  pinMode(stepPin2, OUTPUT); pinMode(dirPin2, OUTPUT);
+  pinMode(stepPin3, OUTPUT); pinMode(dirPin3, OUTPUT);
 
-  digitalWrite(DIR_PIN_ALIGN, direction); // initialise dir of align actuator
-  digitalWrite(DIR_PIN_CUT, direction); // initialise dir of cut actuator
+  pinMode(limitSwitch1, INPUT_PULLUP);
+  pinMode(limitSwitch2, INPUT_PULLUP);
+  pinMode(limitSwitchL, INPUT_PULLUP);
+  pinMode(limitSwitchR, INPUT_PULLUP);
 
-  // limitswitches
-  pinMode(LIMIT_SWITCH_ALIGN, INPUT_PULLUP);
-  pinMode(LIMIT_SWITCH_CUT, INPUT_PULLUP);
+  interval1 = TOTAL_DURATION / steps1;
+  interval2 = TOTAL_DURATION / steps2;
 
-  // paddle
-  pinMode(DIR_PIN_PADDLE, OUTPUT);
-  pinMode(STEP_PIN_PADDLE, OUTPUT);
-  digitalWrite(DIR_PIN_PADDLE, PADDLE_TO_HOME);
-
-  delay(2000);
-
+  digitalWrite(dirPin1, DIR_TOWARD_HOME);
+  digitalWrite(dirPin2, DIR_TOWARD_HOME);
 }
 
 void loop() {
-
-
-  // update state
-  stateHandler();
-
-  // move step/cut actuators if appropriate
-  // moveActuators();
-
-  // move paddle if appropriate
-  updatePaddleDir();
-  movePaddle();
-}
-
-void stateHandler(){
-  // Serial.print("target pos: "); Serial.println(targetPaddlePos);
-
-  // Serial.print("real pos: "); Serial.println(paddlePos);
-
-  // state machine
-  switch (systemState) {
-
-      case INITIALISING_CAMERA:
-        // let python know that we're ready to start the camera
-        // may need two states bc then we need to wait for python to tell us okay
-        break;
-
-      case INITIALISING_BLADE:
-        // turn on motor for rotary saw
-        break;
-
-      case HOMING_PADDLE:
-        // move paddle to limit switch
-        // if paddle limitswitch activated, move to next step + reset paddlePos = 0
-        if (paddleHomed()){
-          paddlePos = PADDLE_HOME_POS; // set paddle position to home
-          Serial.println("paddled home!");
-          // while(1);
-        }
-
-        break;
-
-      case MOVING_UP:
-        // move actuators up until both activate top limit switches
-        if (movedUp()) systemState = ASK_FOR_IMG;
-        break;
-
-      case MOVING_DOWN:
-        // move actuators down until both steppers do the correct number of StepsPerCycle
-        if (movedDown()) {
-          Serial.println("moving back up!");
-          // reactivated actuators
-          alignActivated = 1;
-          cutActivated = 1;
-
-          // restart step counts
-          alignStepCount = 0;
-          cutStepCount = 0;
-
-          // change state
-          systemState = MOVING_UP;
-        }
-        break;
-
-      case ASK_FOR_IMG:
-        Serial.println("SNAP"); // send msg to python to take image
-        systemState = WAITING_FOR_IMG_OUTPUT;
-        break;
-
-      case WAITING_FOR_IMG_OUTPUT:
-        if (receivedImgOutput()) {
-
-          // check input
-          if (syringeDir == 'R' || syringeDir == 'L'){
-          // activate steppers
-          // alignActivated = 1;
-          // cutActivated = 1;
-
-            // change state
-            setPaddlePreposition();
-            intervalPaddle = FAST_INTERVAL_PADDLE; // also increase speed
-            systemState = PRE_POSITION_PADDLE;
-
-          } else {
-            // go back to SNAP
-            systemState = ASK_FOR_IMG;
-          }
-        }
-        break;
-
-      case PRE_POSITION_PADDLE:
-        if (paddleTargetReached){
-
-          // change state
-          setPaddlePlungerPos();
-          systemState = TESTING_REPOSITIONING;
-
-        }
-        break;
-
-      case TESTING_REPOSITIONING:
-        if (paddleTargetReached){
-          
-          // change state
-          systemState = ASK_FOR_IMG;
-
-        }
-        break;
-
-      default:
-
-        // statements
-        Serial.println("this is not a state :'(");
-        break;
-
+  while (Serial.available()) {
+    char ch = Serial.read();
+    static String line = "";
+    if (ch == '\n') {
+      line.trim();
+      if (line == "READY") {
+        isReady = true;
+        Serial.println(">> Arduino READY");
+        digitalWrite(dcMotorPin, HIGH);
+      } else if (line == "PAUSE") {
+        isPaused = true;
+        Serial.println(">> Arduino PAUSED");
+        digitalWrite(dcMotorPin, LOW);
+      } else if (line == "RESUME") {
+        isPaused = false;
+        Serial.println(">> Arduino RESUMED");
+        digitalWrite(dcMotorPin, HIGH);
+      }
+      line = "";
+    } else {
+      line += ch;
     }
 
-
-}
-
-
-/* STATE FUNCTIONS */
-
-uint8_t paddleHomed(){
-  // // return true if the paddle limitswitch is activated
-  uint8_t homed = limitswitchActivated(LIMIT_SWITCH_PADDLE);
-  
-  if (homed){
-    return 1;
-  }
-
-  return 0;
-
-}
-
-uint8_t movedUp(){
-  // return true if both limitswitches have been activated
-
-  // bools for recording whether alignment and cutting steps have reached the end of either their upward or downward cycle
-  uint8_t aligned = limitswitchActivated(LIMIT_SWITCH_ALIGN);
-  uint8_t cut = limitswitchActivated(LIMIT_SWITCH_CUT);
-
-  // set dir
-  direction = actuatorUpDir;
-
-  // deactivate the stepper if limitswitches were activated
-  if (aligned) alignActivated = 0; 
-  if (cut) cutActivated = 0;
-
-  // return true if both actuators have reached their endpoints
-  if (!alignActivated && !cutActivated) return 1;
-
-  // otherwise keep moving align actuator up
-  return 0;
-}
-
-uint8_t movedDown(){
-  // return true if completed the correct number of steps for a cycle
-  
-  // set dir
-  direction = actuatorDownDir;
-
-  // get out if both actuators are deactivated
-  if (!alignActivated && !cutActivated) return 1;
-
-  // deactivate actuators if step count reached
-  if (alignStepCount >= StepsPerAlignCycle) alignActivated = 0;
-  if (cutStepCount >= StepsPerCutCycle) cutActivated = 0;
-
-  // increment step count
-  alignStepCount++;
-  cutStepCount+=2; // cutting step is moving twice as fast as align step
-
-  return 0;
-
-}
-
-void moveActuators(void){
-  // update direction
-  digitalWrite(DIR_PIN_ALIGN, direction);
-  digitalWrite(DIR_PIN_CUT, direction);
-
-  // update step
-  if (alignActivated || cutActivated) {
-    // Step 1: Leading edge
-    if (alignActivated) digitalWrite(STEP_PIN_ALIGN, HIGH);
-    if (cutActivated)   digitalWrite(STEP_PIN_CUT, HIGH);
-    delayMicroseconds(ActuatorStepDelay);
-
-    // Step 2: Trailing edge
-    digitalWrite(STEP_PIN_ALIGN, LOW);
-    digitalWrite(STEP_PIN_CUT, LOW);
-    delayMicroseconds(ActuatorStepDelay);
-
-    // Step 3: Extra step for cut actuator to make it 2x faster
-    if (cutActivated) {
-      digitalWrite(STEP_PIN_CUT, HIGH);
-      delayMicroseconds(ActuatorStepDelay);
-      digitalWrite(STEP_PIN_CUT, LOW);
-      delayMicroseconds(ActuatorStepDelay);
+    static String input = "";
+    if (ch == '<') input = "";
+    input += ch;
+    if (ch == '>') {
+      int dIndex = input.indexOf('d');
+      int cIndex = input.indexOf('c');
+      if (dIndex != -1 && cIndex != -1) {
+        orientation = input.charAt(dIndex + 1);
+        cutSteps = input.substring(cIndex + 1, input.length() - 1).toInt();
+        newCommandAvailable = true;
+      }
+      input = "";
     }
   }
-  // if neither are activated, do nothing
 
-}
+  if (isPaused) return;
 
+  unsigned long now = micros();
 
-void setPaddlePreposition(void){
-  // sets target position of paddle with known syringe dir
-  if (syringeDir == 'R'){
-    // move paddle to home
-    directionPaddle = PADDLE_TO_HOME;
-    targetPaddlePos = PADDLE_HOME_POS;
-  }
-  else if (syringeDir == 'L'){
-    // move paddle to opposite side
-    directionPaddle = PADDLE_AWAY_FROM_HOME;
-    targetPaddlePos = PADDLE_AWAY_FROM_HOME_POS;
-  }
-  else {
-    Serial.println("ERROR: not a syringe dir");
-  }
+  if (!systemHomed) {
+    if (!homed1 && debounceLimitSwitch(limitSwitch1, debounceStart1)) { homed1 = true; Serial.println("Stepper 1 homed"); }
+    if (!homed2 && debounceLimitSwitch(limitSwitch2, debounceStart2)) { homed2 = true; Serial.println("Stepper 2 homed"); }
 
-  // set the target flag false
-  paddleTargetReached = 0;
-}
+    if (!homed1) simpleStep(stepPin1, now, 3000, lastStepTime1, pulseStart1, pulseHigh1);
+    if (!homed2) simpleStep(stepPin2, now, 3000, lastStepTime2, pulseStart2, pulseHigh2);
 
-
-void setPaddlePlungerPos(void){
-  // if (syringeDir == 'R'){
-
-  // } else if (syringeDir == 'L'){
-
-  // } else {
-  //   Serial.println("ERROR: not a syringe dir");
-  // }
-
-  // map pixel space to paddle motor space (i.e. number of steps to send)
-  // 
-
-  // set dir
-  if (syringeDir == 'R'){
-    // move paddle away from home
-    directionPaddle = PADDLE_AWAY_FROM_HOME;
-  }
-  else if (syringeDir == 'L'){
-    // move paddle towards home
-    directionPaddle = PADDLE_TO_HOME;
-  }
-  else {
-    Serial.println("ERROR: not a syringe dir");
-  }
-
-  // python should send a value that has already been mapped to our paddle space
-  // since the paddle space is not changing
-  // python accounts for slight changes in camera positioning
-  // and always sends a value equivalent to the number of steps needed to travel by the paddle stepper
-  // this is a value from 0 (HOME) to MAX
-  targetPaddlePos = syringeCut;
-
-  // set the target flag false
-  paddleTargetReached = 0;
-
-}
-
-
-uint8_t movedPaddleToTarget(){
-  // check if moved to target position
-  // // steps are impossible to miss
-  // if (paddlePos == targetPaddlePos) return 1;
-  
-  if (directionPaddle == PADDLE_TO_HOME){
-    // if moving towards home, paddlePos will have to be less than target position to pass target
-    if (paddlePos <= targetPaddlePos) {
-      paddleTargetReached = 1;
-      return 1;
+    if (homed1 && homed2) {
+      systemHomed = true;
+      forwardStroke = true;
+      snapSent = false;
+      setDirection(forwardStroke);
+      resetStroke(now);
+      Serial.println("Both motors homed → starting outward stroke");
     }
-  } else if (directionPaddle == PADDLE_AWAY_FROM_HOME) {
-    // paddle is moving away from home, so paddlePos will have to be larger than target to pass target
-    if (paddlePos >= targetPaddlePos){
-      paddleTargetReached = 1;
-      return 1;
-    }
-  } else if (directionPaddle == PADDLE_OFF){
-    // don't change the paddleTargetReached flag
-    // but still still return true
-    // this addresses both the case that paddle if OFF, but a target has just been set
-    // or that paddle is off and no target exists
-    return 1;
-  } else {
-    Serial.println("ERROR: Not a valid paddle dir");
-  }
-
-
-  return 0;
-}
-
-void updatePaddleDir(void){
-  
-  if ((directionPaddle != PADDLE_OFF) && (directionPaddle != lastDirectionPaddle)) {
-    digitalWrite(DIR_PIN_PADDLE, directionPaddle);
-    lastDirectionPaddle = directionPaddle;
-  }
-}
-
-void movePaddle(void){
-  if (directionPaddle == PADDLE_OFF) {
-    return; // Paddle is inactive
-  }
-
-  // 🚫 Don't move if already at target
-  if (movedPaddleToTarget()) {
-    directionPaddle = PADDLE_OFF;
     return;
   }
-  
-  // update step
-  unsigned long now = micros();
-  if (!pulseHighPaddle && (now - lastStepTimePaddle >= intervalPaddle)) {
-    // next step to be sent according to time interval wanted (i.e. set speed)
-    // pull step pin HIGH
-    digitalWrite(STEP_PIN_PADDLE, HIGH);
-    pulseStartPaddle = now;
-    pulseHighPaddle = true;
-    lastStepTimePaddle = now;
 
-    // update paddle pos
-    if (directionPaddle == PADDLE_TO_HOME){
-      // this is the homing dir
-      // so should go down to 0 (which is home)
-      paddlePos--;
+  if (snapSent) {
+    bool limitHit = false;
+    bool motor3Direction = (orientation == 'L') ? LOW : HIGH;
+    if (motor3Direction == LOW) {
+      limitHit = debounceLimitSwitch(limitSwitchL, debounceStartL);
     } else {
-      // going away from home
-      // increase pos
-      paddlePos++;
+      limitHit = debounceLimitSwitch(limitSwitchR, debounceStartR);
     }
-  } else if (pulseHighPaddle && (now - pulseStartPaddle >= 10)) {
-    // pull step pin LOW to send falling edge
-    digitalWrite(STEP_PIN_PADDLE, LOW);
-    pulseHighPaddle = false;
-  }
 
+    if (!limitHit) {
+      syncStep(stepPin3, now, 1000, cutStepCount, cutSteps,
+               lastStepTime3, pulseStart3, pulseHigh3);
+    }
 
-}
-
-
-uint8_t limitswitchActivated(uint8_t pin){
-  // return true if limit switch at specified pin is activated
-  if (!digitalRead(pin)){
-    return 1;
-  }
-  return 0;
-}
-
-
-uint8_t receivedImgOutput(void) {
-  // output from python is going to be in the form:
-  // <d[char]c[int]>
-  // where d is direction the syringe is pointing: 'L' or 'R'
-  // and c is where to cut in pixels (int)
-
-  static String buf = "";
-  static uint8_t data_packet_started = 0;
-  static uint8_t done = 0;
-
-  while (Serial.available() && !done) {
-    char inChar = (char)Serial.read();
-
-    if (data_packet_started) {
-        // add to buffer
-        // include end char
-        buf += inChar;
-      if (inChar == '>') {
-        // received end char
-        // stop reading serial
-        done = 1;
-        Serial.println(buf);
-      }
-    } else {
-      if (inChar == '<') {
-        // received start char
-        // start reading serial
-        data_packet_started = 1;
-      }
+    if ((cutStepCount >= cutSteps && !pulseHigh3) || limitHit) {
+      snapSent = false;
+      Serial.println("Motor 3 cutting complete");
     }
   }
 
-  if (done) {
-    // Try parsing manually without exceptions
-    int dIdx = buf.indexOf("d");
-    int cIdx = buf.indexOf("c");
+  if (forwardStroke) {
+    syncStep(stepPin1, now, interval1, currentStep1, steps1,
+             lastStepTime1, pulseStart1, pulseHigh1);
+    syncStep(stepPin2, now, interval2, currentStep2, steps2,
+             lastStepTime2, pulseStart2, pulseHigh2);
+  } else {
+    if (!debounceLimitSwitch(limitSwitch1, debounceStart1))
+      syncStepNoCount(stepPin1, now, interval1, lastStepTime1, pulseStart1, pulseHigh1);
+    else
+      finalizePulse(stepPin1, now, pulseStart1, pulseHigh1);
 
-    if (dIdx != -1 && cIdx != -1) {
-      syringeDir = buf.charAt(dIdx + 1);
-      
-      int startC = cIdx + 1;
-      int endC = buf.indexOf('>');
-      if (endC != -1) {
-        String cStr = buf.substring(startC, endC);
-        syringeCut = cStr.toInt();
-        
-        Serial.print("dir: ");
-        Serial.println(syringeDir);
-        Serial.print("cut: ");
-        Serial.println(syringeCut);
+    if (!debounceLimitSwitch(limitSwitch2, debounceStart2))
+      syncStepNoCount(stepPin2, now, interval2, lastStepTime2, pulseStart2, pulseHigh2);
+    else
+      finalizePulse(stepPin2, now, pulseStart2, pulseHigh2);
+
+    // Add motor 3 homing delay logic
+    if (!readyToHomeMotor3 && motor3HomingStartTime > 0 &&
+        now - motor3HomingStartTime >= 10000) {
+      readyToHomeMotor3 = true;
+    }
+
+    if (!motor3Homed && readyToHomeMotor3) {
+      if (orientation == 'L') {
+        digitalWrite(dirPin3, HIGH);
+        if (!debounceLimitSwitch(limitSwitchR, debounceStartR)) {
+          simpleStep(stepPin3, now, 1000, lastStepTime3, pulseStart3, pulseHigh3);
+        } else {
+          finalizePulse(stepPin3, now, pulseStart3, pulseHigh3);
+          motor3Homed = true;
+          motor3HomedTime = now;
+          Serial.println("Homed Right Motor 3");
+        }
       } else {
-        Serial.println("Error: could not find closing bracket for c");
+        digitalWrite(dirPin3, LOW);
+        if (!debounceLimitSwitch(limitSwitchL, debounceStartL)) {
+          simpleStep(stepPin3, now, 1000, lastStepTime3, pulseStart3, pulseHigh3);
+        } else {
+          finalizePulse(stepPin3, now, pulseStart3, pulseHigh3);
+          motor3Homed = true;
+          motor3HomedTime = now;
+          Serial.println("Homed Left Motor 3");
+        }
       }
-    } else {
-      Serial.println("Error: d or c not found");
     }
-
-    buf = "";
-    done = 0;
-    data_packet_started = 0;
-
-    return 1;
   }
 
-  return 0;
+  if (forwardStroke &&
+      currentStep1 >= steps1 && currentStep2 >= steps2 &&
+      !pulseHigh1 && !pulseHigh2) {
+    forwardStroke = false;
+    setDirection(forwardStroke);
+    motor3Homed = false;
+    cutStepCount = 0;
+    motor3HomingStartTime = now;
+    readyToHomeMotor3 = false;
+    Serial.println("Outward stroke complete → return stroke");
+  }
+
+  if (!forwardStroke &&
+      debounceLimitSwitch(limitSwitch1, debounceStart1) &&
+      debounceLimitSwitch(limitSwitch2, debounceStart2) &&
+      motor3Homed &&
+      returnStrokeDoneTime == 0) {
+    returnStrokeDoneTime = now;
+    forwardStroke = true;
+    setDirection(forwardStroke);
+    resetStroke(now);
+    Serial.println("Return stroke complete → next outward stroke");
+  }
+
+  if (returnStrokeDoneTime > 0 && now - returnStrokeDoneTime >= SNAP_DELAY_MICROS) {
+    Serial.println("SNAP");
+    digitalWrite(dirPin3, (orientation == 'L') ? LOW : HIGH);
+    cutStepCount = 0;
+    lastStepTime3 = now;
+    pulseStart3 = 0;
+    pulseHigh3 = false;
+    snapSent = true;
+    returnStrokeDoneTime = 0;
+  }
+}
+
+/* -------- Helper functions ------------------------ */
+void syncStep(int pin, unsigned long now, unsigned long interval,
+              int &stepCount, int maxSteps,
+              unsigned long &lastTime, unsigned long &pulseStart, bool &pulseHigh) {
+  if (!pulseHigh && stepCount < maxSteps && now - lastTime >= interval) {
+    digitalWrite(pin, HIGH);
+    pulseStart = now;
+    pulseHigh = true;
+    lastTime = now;
+    stepCount++;
+  } else if (pulseHigh && now - pulseStart >= 10) {
+    digitalWrite(pin, LOW);
+    pulseHigh = false;
+  }
+}
+
+void syncStepNoCount(int pin, unsigned long now, unsigned long interval,
+                     unsigned long &lastTime, unsigned long &pulseStart, bool &pulseHigh) {
+  if (!pulseHigh && now - lastTime >= interval) {
+    digitalWrite(pin, HIGH);
+    pulseStart = now;
+    pulseHigh = true;
+    lastTime = now;
+  } else if (pulseHigh && now - pulseStart >= 10) {
+    digitalWrite(pin, LOW);
+    pulseHigh = false;
+  }
+}
+
+void simpleStep(int pin, unsigned long now, unsigned long interval,
+                unsigned long &lastTime, unsigned long &pulseStart, bool &pulseHigh) {
+  if (!pulseHigh && now - lastTime >= interval) {
+    digitalWrite(pin, HIGH);
+    pulseStart = now;
+    pulseHigh = true;
+    lastTime = now;
+  } else if (pulseHigh && now - pulseStart >= 10) {
+    digitalWrite(pin, LOW);
+    pulseHigh = false;
+  }
+}
+
+void finalizePulse(int pin, unsigned long now,
+                   unsigned long &pulseStart, bool &pulseHigh) {
+  if (pulseHigh && now - pulseStart >= 10) {
+    digitalWrite(pin, LOW);
+    pulseHigh = false;
+  }
+}
+
+void setDirection(bool awayFromSwitch) {
+  digitalWrite(dirPin1, awayFromSwitch ? DIR_AWAY_HOME : DIR_TOWARD_HOME);
+  digitalWrite(dirPin2, awayFromSwitch ? DIR_AWAY_HOME : DIR_TOWARD_HOME);
+}
+
+void resetStroke(unsigned long now) {
+  currentStep1 = currentStep2 = 0;
+  lastStepTime1 = lastStepTime2 = now;
+}
+
+bool debounceLimitSwitch(int pin, unsigned long &startTime) {
+  unsigned long debounceDelay = 5000;
+  if (digitalRead(pin) == LOW) {
+    if (micros() - startTime >= debounceDelay) return true;
+  } else {
+    startTime = micros();
+  }
+  return false;
 }
