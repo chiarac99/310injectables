@@ -4,9 +4,8 @@ Shows original image with bounding box overlay and the cropped result.
 """
 
 import cv2
-import numpy as np
 import matplotlib.pyplot as plt
-from undistort import load_calibration_data
+from vision.undistort import load_calibration_data
 
 
 def test_bounding_box():

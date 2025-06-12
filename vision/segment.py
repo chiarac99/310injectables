@@ -12,15 +12,14 @@ Author: The Injectables | ME310
 import torch
 import numpy as np
 import cv2
-import matplotlib.pyplot as plt
-from numpy.ma.core import where
 from segment_anything import sam_model_registry, SamPredictor
 import undistort
+import matplotlib.pyplot as plt
 
 # from vision.undistort import undistort_img
 # Constants
-# SAM_CHECKPOINT = "sam_vit_b_01ec64.pth"
-SAM_CHECKPOINT = "/Users/venkatasaisarangrandhe/sam_weights/sam_vit_b_01ec64.pth"
+SAM_CHECKPOINT = "sam_vit_b_01ec64.pth"
+# SAM_CHECKPOINT = "/Users/venkatasaisarangrandhe/sam_weights/sam_vit_b_01ec64.pth"
 MODEL_TYPE = "vit_b"
 
 # Hardware Constants (in inches)
@@ -68,7 +67,10 @@ def segment(img):
 
     # Convert to RGB for processing
     image_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
+    # plt.imshow(image_rgb, cmap='gray')
+    # plt.title("Cropped image")
+    # plt.axis('off')
+    # plt.show()
     # Generate prediction mask
     predictor.set_image(image_rgb)
     x, y, z = np.shape(image_rgb)
@@ -88,6 +90,11 @@ def segment(img):
     mask = restored_mask
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
     cleaned_mask = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_OPEN, kernel)
+
+    # plt.imshow(mask, cmap='gray')
+    # plt.title("Cropped image")
+    # plt.axis('off')
+    # plt.show()
 
     # Extract largest component to remove noise
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(cleaned_mask)
@@ -320,141 +327,141 @@ def get_cut(
 
 
 # Example usage
-"""
-# Open camera
-camera = cv2.VideoCapture(0)
-
-# Warm up camera
-for _ in range(5):
-    ret, frame = camera.read()
-
-if ret:
-    # Process the captured frame
-    image_rgb, orientation, mask, syringe_start_col, syringe_end_col = segment(frame)
-    if orientation != None:
-        rubber_mask, start_col, end_col = detect_plunger(image_rgb, mask)
-
-        # calculate cut
-        errorR = 60
-        errorL = 30
-        cut_steps, where_to_move, where_to_cut = get_cut(
-            syringe_start_col,
-            syringe_end_col,
-            start_col,
-            end_col,
-            orientation,
-            errorR,
-            errorL,
-        )
-
-        msg = f"<d{orientation}c{cut_steps}>"
-        print(f"sent {msg} to arduino")
-
-        # set up plot
-        fig, ax = plt.subplots()
-        image_disp = ax.imshow(image_rgb)
-        mask_disp = ax.imshow(mask, alpha=0.5)
-
-        # blades
-        (
-            _,
-            _,
-            _,
-            _,
-            _,
-            bounding_box,
-            pixel_to_length_ratio,
-            _,
-            BLADE_POS_LEFT,
-            BLADE_POS_RIGHT,
-        ) = undistort.load_calibration_data()
-        # Adjust blade positions for cropped image coordinates
-        x1 = int(bounding_box[0])
-        blade_line_L = ax.axvline(
-            BLADE_POS_LEFT,
-            color="red",
-            linestyle="--",
-            label="Blade L",
-        )
-        blade_line_R = ax.axvline(
-            BLADE_POS_RIGHT,
-            color="red",
-            linestyle="--",
-            label="Blade R",
-        )
-
-        where_to_move_line = ax.axvline(
-            (where_to_move * pixel_to_length_ratio),
-            color="green",
-            linestyle="--",
-            label="where_to_move",
-        )
-        where_to_cut_line = ax.axvline(
-            where_to_cut
-            * pixel_to_length_ratio,  # Convert to pixels and adjust for cropped coordinates
-            color="blue",
-            linestyle="--",
-            label="where_to_cut",
-        )
-
-        ax.set_title("Predicted Mask from SAM")
-        ax.axis("off")
-        # add orientation text below image
-        orientation_text = fig.text(0.5, 0.05, orientation, ha="center", fontsize=12)
-
-        # update data in existing plot objects
-        mask_disp.set_alpha(0.5)
-        mask_disp.set_cmap("gray")
-
-        plt.legend()
-        plt.show()
-
-        # Visualize final results
-        plt.figure(figsize=(15, 5))
-
-        # Original with mask overlay
-        plt.subplot(131)
-        plt.imshow(image_rgb)
-        plt.imshow(mask, alpha=0.3)
-        plt.axvline(
-            syringe_start_col, color="yellow", linestyle="--", label="Syringe Start"
-        )
-        plt.axvline(
-            syringe_end_col, color="purple", linestyle="--", label="Syringe End"
-        )
-        plt.title(f"Segmentation Result\nOrientation: {orientation}")
-        plt.axis("off")
-        plt.legend()
-
-        # Plunger detection
-        plt.subplot(132)
-        plt.imshow(rubber_mask, cmap="gray")
-        plt.axvline(start_col, color="lime", linestyle="--", label="Plunger Start")
-        plt.axvline(end_col, color="orange", linestyle="--", label="Plunger End")
-        plt.title("Plunger Detection")
-        plt.legend()
-        plt.axis("off")
-
-        # Combined view
-        plt.subplot(133)
-        plt.imshow(image_rgb)
-        plt.imshow(rubber_mask, alpha=0.5, cmap="Reds")
-        plt.title("Combined View")
-        plt.axis("off")
-
-        plt.tight_layout()
-        plt.show()
-
-        # Save the captured frame if needed
-        cv2.imwrite("captured_frame.jpg", frame)
-
-        # Clean up
-        camera.release()
-    else:
-        cv2.imshow("No syringe present!", frame)
-        cv2.waitKey(0)  # press 0 to close
-        cv2.destroyAllWindows()
-
-else:
-    print("Failed to capture image from camera")
-"""
+#
+# # Open camera
+# camera = cv2.VideoCapture(0)
+#
+# # Warm up camera
+# for _ in range(5):
+#     ret, frame = camera.read()
+#
+# if ret:
+#     # Process the captured frame
+#     image_rgb, orientation, mask, syringe_start_col, syringe_end_col = segment(frame)
+#     if orientation != None:
+#         rubber_mask, start_col, end_col = detect_plunger(image_rgb, mask)
+#
+#         # calculate cut
+#         errorR = 0.8
+#         errorL = 0.8
+#         cut_steps, where_to_move, where_to_cut = get_cut(
+#             syringe_start_col,
+#             syringe_end_col,
+#             start_col,
+#             end_col,
+#             orientation,
+#             errorR,
+#             errorL,
+#         )
+#
+#         msg = f"<d{orientation}c{cut_steps}>"
+#         print(f"sent {msg} to arduino")
+#
+#         # set up plot
+#         fig, ax = plt.subplots()
+#         image_disp = ax.imshow(image_rgb)
+#         mask_disp = ax.imshow(mask, alpha=0.5)
+#
+#         # blades
+#         (
+#             _,
+#             _,
+#             _,
+#             _,
+#             _,
+#             bounding_box,
+#             pixel_to_length_ratio,
+#             _,
+#             BLADE_POS_LEFT,
+#             BLADE_POS_RIGHT,
+#         ) = undistort.load_calibration_data()
+#         # Adjust blade positions for cropped image coordinates
+#         x1 = int(bounding_box[0])
+#         blade_line_L = ax.axvline(
+#             BLADE_POS_LEFT,
+#             color="red",
+#             linestyle="--",
+#             label="Blade L",
+#         )
+#         blade_line_R = ax.axvline(
+#             BLADE_POS_RIGHT,
+#             color="red",
+#             linestyle="--",
+#             label="Blade R",
+#         )
+#
+#         where_to_move_line = ax.axvline(
+#             int(where_to_move * pixel_to_length_ratio),
+#             color="green",
+#             linestyle="--",
+#             label="where_to_move",
+#         )
+#         where_to_cut_line = ax.axvline(
+#             int(where_to_cut
+#             * pixel_to_length_ratio),  # Convert to pixels and adjust for cropped coordinates
+#             color="blue",
+#             linestyle="--",
+#             label="where_to_cut",
+#         )
+#
+#         ax.set_title("Predicted Mask from SAM")
+#         ax.axis("off")
+#         # add orientation text below image
+#         orientation_text = fig.text(0.5, 0.05, orientation, ha="center", fontsize=12)
+#
+#         # update data in existing plot objects
+#         mask_disp.set_alpha(0.5)
+#         mask_disp.set_cmap("gray")
+#
+#         plt.legend()
+#         plt.show()
+#
+#         # Visualize final results
+#         plt.figure(figsize=(15, 5))
+#
+#         # Original with mask overlay
+#         plt.subplot(131)
+#         plt.imshow(image_rgb)
+#         plt.imshow(mask, alpha=0.3)
+#         plt.axvline(
+#             syringe_start_col, color="yellow", linestyle="--", label="Syringe Start"
+#         )
+#         plt.axvline(
+#             syringe_end_col, color="purple", linestyle="--", label="Syringe End"
+#         )
+#         plt.title(f"Segmentation Result\nOrientation: {orientation}")
+#         plt.axis("off")
+#         plt.legend()
+#
+#         # Plunger detection
+#         plt.subplot(132)
+#         plt.imshow(rubber_mask, cmap="gray")
+#         plt.axvline((start_col+end_col)/2, color="lime", linestyle="--", label="Plunger")
+#         # plt.axvline(end_col, color="orange", linestyle="--", label="Plunger End")
+#         plt.title("Plunger Detection")
+#         plt.legend()
+#         plt.axis("off")
+#
+#         # Combined view
+#         plt.subplot(133)
+#         plt.imshow(image_rgb)
+#         plt.imshow(rubber_mask, alpha=0.5, cmap="Reds")
+#         plt.title("Combined View")
+#         plt.axis("off")
+#
+#         plt.tight_layout()
+#         plt.show()
+#
+#         # Save the captured frame if needed
+#         cv2.imwrite("captured_frame.jpg", frame)
+#
+#         # Clean up
+#         camera.release()
+#     else:
+#         cv2.imshow("No syringe present!", frame)
+#         cv2.waitKey(0)  # press 0 to close
+#         cv2.destroyAllWindows()
+#
+# else:
+#     print("Failed to capture image from camera")
+#

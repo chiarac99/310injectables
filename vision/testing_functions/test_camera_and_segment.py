@@ -8,10 +8,9 @@ This script:
 """
 
 import cv2
-import numpy as np
 import matplotlib.pyplot as plt
-from segment import segment, detect_plunger
-from undistort import undistort_img, load_calibration_data
+from vision.segment import segment, detect_plunger
+from vision.undistort import undistort_img, load_calibration_data
 
 
 def capture_and_segment():

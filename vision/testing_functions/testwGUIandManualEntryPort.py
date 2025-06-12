@@ -103,8 +103,7 @@ def start_gui_and_wait():
 # === Original test.py logic ===
 def run_main_test_logic(arduino_port):
     import cv2
-    import segment
-    import undistort
+    from vision import segment
 
     baud_rate = 115200
     ser = serial.Serial(arduino_port, baud_rate, timeout=1)

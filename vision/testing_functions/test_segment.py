@@ -13,9 +13,8 @@ import torch
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
-from numpy.ma.core import where
 from segment_anything import sam_model_registry, SamPredictor
-import undistort
+from vision import undistort
 
 # from vision.undistort import undistort_img
 # Constants
